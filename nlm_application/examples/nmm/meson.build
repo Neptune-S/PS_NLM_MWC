@@ -21,5 +21,6 @@ sources = files('lib/nmm_lib.c',
     'lib/ps_nr_pdcch_crc_check.c',
     'lib/ps_nr_pdcch_polar_decoder.c',
     'lib/nr_ps_pdcch_utility_helper',
+#	'lib/socket.c',
 	'nmm-test-app/main.c')
 includes = include_directories('lib', 'nmm-test-app')

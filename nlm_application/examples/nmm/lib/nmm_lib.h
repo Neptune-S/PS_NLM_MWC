@@ -125,6 +125,7 @@ typedef struct fapi_indication {
 #define MAX_SIB_SIZE			8192
 #define MAX_SI				32
 
+
 /* LTE specific structures */
 typedef struct lte_cell_search_request {
 	uint16_t tag;
@@ -216,8 +217,14 @@ typedef struct lte_sys_info_indication {
 	uint8_t  sib[MAX_SIB_SIZE];
 } lte_sys_info_indication_t;
 
+typedef struct {
+    uint msg_type;
+    uint gscn;
+}parse_t;
+
 /* FAPI request API */
 int nmm_fapi_send_request(fapi_request_t *req);
+//int server_init ();
 
 
 /*** Debug interface ***/

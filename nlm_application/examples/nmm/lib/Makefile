@@ -35,6 +35,7 @@ SRCS-y += ps_nr_pdcch_dmrs_gen.c
 SRCS-y += ps_nr_parse_dci_1_0_si_sib_1.c
 SRCS-y += ps_nr_pdcch_crc_check.c
 SRCS-y += nr_ps_pdcch_utility_helper.c
+SRCS-y += mjson.c
 
 
 CFLAGS += -DALLOW_EXPERIMENTAL_API

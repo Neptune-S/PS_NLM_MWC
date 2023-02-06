@@ -24,39 +24,7 @@ void ps_nr_pdcch_coreset_extraction(armral_cmplx_int16_t *inSym,uint8_t nSym,uin
  uint16_t end_re_first_half     = (rbs - start_rb_second_half)*n_re_rb;
 
  armral_cmplx_int16_t *rx_symb_fft = (armral_cmplx_int16_t *)scratchBuf;
- /*armral_cmplx_int16_t* phase_derot_jitt_guard = (armral_cmplx_int16_t*)scratchBuf2;
- 
- ------------------------------------------------------------redundant now should be deleted----------------------------------------------------------------
- armral_cmplx_int16_t* phase_derot_jitt_guard18 = (armral_cmplx_int16_t*)scratchBuf2; // added
- armral_cmplx_int16_t* phase_derot_jitt_guard22 = (armral_cmplx_int16_t*)scratchBuf3; // added
- armral_cmplx_int16_t *rx_symb_fft2 = (armral_cmplx_int16_t*)scratchBuf4; // added
- armral_cmplx_int16_t* rx_symb_fft3 = (armral_cmplx_int16_t*)scratchBuf5; // added
-
- uint16_t  exponential[fftSize];    //added
- 
- uint8_t jitt_guard = 22;
- for (i = 0; i < fftsize; i++)                                               //added
- {
-
-     //     exponential[i] = 2*M_PI*(cp_length - jitt_guard)/fftSize * i;
-     exponential[i] = (M_PI >> 9) * (cp_length - jitt_guard) * i;
-     phase_derot_jitt_guard22[i].re = cos(exponential[i]) << 15;
-     phase_derot_jitt_guard22[i].im = sin(exponential[i]) << 15;
-     exponential[i] = i;
- }
-
- uint8_t jitt_guard = 18;
- for (i = 0; i < fftsize; i++)                                               //added
- {
-
-     //     exponential[i] = 2*M_PI*(cp_length - jitt_guard)/fftSize * i;
-     exponential[i] = (M_PI >> 9) * (cp_length - jitt_guard) * i;
-     phase_derot_jitt_guard18[i].re = cos(exponential[i]) << 15;
-     phase_derot_jitt_guard18[i].im = sin(exponential[i]) << 15;
-     exponential[i] = i;
- }
- ------------------------------------------------------------redundant now should be deleted-------------------------------------------------------------
-*/ //redundant now
+        
  if(symb_offset == 0)
  {	
  	
@@ -66,22 +34,7 @@ void ps_nr_pdcch_coreset_extraction(armral_cmplx_int16_t *inSym,uint8_t nSym,uin
   	{	
     	cp_length               = cp_length_type_0[n];
     	uint32_t sym_start_loc  = sym_offset+cp_length;
- /*       uint32_t jitt_guard = cp_length >> 2;                                       //added
-
-        armral_fft_execute_cs16(p, inSym + sym_offset + jitt_guard , rx_symb_fft2);
         
-        if (n == 0)
-        {
-            phase_derot_jitt_guard = phase_derot_jitt_guard_first; // phase_derot_jitt_guard_first declared in header file
-        }
-        else
-        {
-            phase_derot_jitt_guard = phase_derot_jitt_guard_rest;  // phase_derot_jitt_guard_rest declared in header file
-        }
-
-        armral_cmplx_vecdot_i16(fftSize, rx_symb_fft2, phase_derot_jitt_guard, rx_symb_fft3);
-
-*/
         // Insert FFT here // 
         armral_fft_execute_cs16(p,inSym + sym_start_loc,rx_symb_fft);
     	
@@ -110,18 +63,6 @@ void ps_nr_pdcch_coreset_extraction(armral_cmplx_int16_t *inSym,uint8_t nSym,uin
     	cp_length       = cp_length_type_1[n];
     	uint32_t sym_start_loc  = sym_offset+cp_length;
      
-        /*       uint32_t jitt_guard = cp_length >> 2;                                       //added
-
-       armral_fft_execute_cs16(p, inSym + sym_offset + jitt_guard , rx_symb_fft2);
-
-      
-       phase_derot_jitt_guard = phase_derot_jitt_guard_rest;  // phase_derot_jitt_guard_rest declared in header file
-      
-       armral_cmplx_vecdot_i16(fftSize, rx_symb_fft2, phase_derot_jitt_guard, rx_symb_fft3);
-
-*/
-
-
         // Insert FFT here //
      	armral_fft_execute_cs16(p,inSym + sym_start_loc,rx_symb_fft);
      

@@ -34,6 +34,15 @@
 #include "ps_nr_pdcch.h"
 #include <stdlib.h>
 #include <stdio.h>
+
+#include <netinet/in.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include "mjson.h"
+#define PORT 8080
 //#include <complex.h>
 
 /* BBDEV */
@@ -7323,148 +7332,167 @@ int16_t inSym[4416] = {30,
  23
 };
 
-static int nmm_sib_loop(__attribute__((unused)) void *dummy)
+
+int json_myobj_read(const char *buf, parse_t *myobj) {
+
+    const struct json_attr_t json_attrs[] = {
+        {"msg_type", t_uinteger, .addr.uinteger = &(myobj->msg_type)},
+        {"gscn", t_uinteger, .addr.uinteger = &(myobj->gscn)},
+        {NULL},
+    };
+
+
+    return json_read_object(buf, json_attrs, NULL);
+}
+
+static int server_init(__attribute__((unused)) void *dummy)
 {   
-	/*
-	// These values shall come from higher level //
-	uint32_t rnti         		   = 0xffff;
-	uint32_t infoBits[3] 		   = {0};
-	uint16_t cellId   			   = 103;		 //Integration variable Remove later and read from Controller
-	uint16_t coreset_rb_offset     = 16;
-	uint8_t  nSlotNum  			   = 10;
-	uint8_t  coreset_start_sym     = 0;
-	uint8_t  num_coreset_sym       = 2;
-	uint8_t  num_coreset_rb        = 48;
-    uint8_t  kssb 				   = 0;
-   //  End  //
-
-    uint8_t aggrLevels[MAX_PDCCH_AGGREGATION_LEVELS]        = {16, 8, 4};
-	uint8_t numCandPerAggrLvl[MAX_PDCCH_AGGREGATION_LEVELS] = {1, 2, 4};
-	uint8_t aggrLvlStartIdx                                 =  0;
-	uint8_t cceRegInterleaverIndices[MAX_PDCCH_AGGREGATION] = {0};
-	uint8_t cceCandidates[MAX_PDCCH_AGGREGATION]            = {0};
-	uint8_t numCces;                                     
-	uint8_t rbCandPerAgg[MAX_PDCCH_AGGREGATION * NCCE]      = {0};
-	uint32_t pnX1[2]      = {0,0};
-	uint32_t pnX2[2]      = {0,0};	
-	uint32_t info_bit_pattern[16] = {0};
-	uint16_t E            = 0;           
-	uint16_t N            = 0;
-	uint8_t crcLen        = 24;
-	uint8_t I_il          = 1;
-    uint8_t K;
-	bool crc_check;
 	
-	uint *scratchBuf_polar  = (void *)rte_malloc(NULL,23*1024*sizeof(uint8_t),0); //25 KB of scratch buffer
-	void *scratchBuf_1      = scratchBuf_polar;
-	void *scratchBuf_2      = scratchBuf_1 + 1024*sizeof(armral_cmplx_int16_t); 
-	void *scratchBuf_3      = scratchBuf_2 + 1024*sizeof(armral_cmplx_int16_t); 
-	void *scratchBuf_4      = scratchBuf_3 + 1024*sizeof(armral_cmplx_int16_t); 
-	void *scratchBuf_5      = scratchBuf_4 + 1024*sizeof(armral_cmplx_int16_t); 
-    
-	void *scratchBuf_6      = (void *)rte_malloc(NULL,512*sizeof(float),0);
-	void *scratchBuf_7      = (armral_cmplx_int16_t *)rte_malloc(NULL,2048*sizeof(armral_cmplx_int16_t),0);
+	//int main(int argc, char const* argv[])
+{
+	int server_fd, new_socket,n;
+	struct sockaddr_in address;
+	int opt = 1;
+	int ret;
+	int addrlen = sizeof(address);
+	char buffer[1024] = { 0 };
+	char* hello = "Server is connected";
+	char* reply = "\n Okay";
+	char request[64] = {0};
+	fapi_request_nr_t *fapi_req;
+	nr_cell_follow_request_t *cfb_req;
+	nr_cell_follow_request_t *cf_req;
+	//struct nmm_msg *nmm_info;
 
-	armral_cmplx_int16_t *coreset_out_rb_sym = (armral_cmplx_int16_t *)scratchBuf_7;
-    
-	uint8_t interleaver_pattern[63] = {0};
-     
-	ps_nr_pdcch_coreset_extraction((armral_cmplx_int16_t*)&inSym[0], num_coreset_sym, coreset_start_sym, coreset_rb_offset, num_coreset_rb, kssb, coreset_out_rb_sym,scratchBuf_2);
-
-	ps_nr_pdcch_gen_rb_interleaving_indices(num_coreset_rb, num_coreset_sym, cellId, &cceRegInterleaverIndices[0]); 
-	
-	numCces = (num_coreset_rb * num_coreset_sym) / (NCCE);
-
-	if (numCces >= 16)
-	 	aggrLvlStartIdx = 0;
-	else if (numCces >= 8)
-	 	aggrLvlStartIdx = 1;
-	else
-	 	aggrLvlStartIdx = 2;
-
-	for (uint8_t aggrIdx = aggrLvlStartIdx; aggrIdx < MAX_PDCCH_AGGREGATION_LEVELS; aggrIdx++)
-	{
-		ps_nr_pdcch_calculate_K_N_E(aggrLevels[aggrIdx],  num_coreset_rb, &K, &E, &N); 
-
-		ps_nr_polar_information_bit_pattern(K,  E,  N,  &info_bit_pattern[0], scratchBuf_3, scratchBuf_4, scratchBuf_5);//Max buff(N*8)Bytes
-        
-        ps_nr_polar_bit_interleaver_pattern(K,  I_il, &interleaver_pattern[0]);//Max Buff (N*2)Bytes
-
- 	 	uint16_t n_data_re = aggrLevels[aggrIdx] * NCCE * PDCCH_DATA_SC_PER_RB;
-        		
- 	 	for (uint8_t candIdx = 0; candIdx <numCandPerAggrLvl[aggrIdx]; candIdx++) //numCandPerAggrLvl[aggrIdx]
- 	 	{
- 			printf("Aggregation Level %d Candidate %d\n", aggrLevels[aggrIdx], candIdx);
-            
- 	 		ps_nr_pdcch_gen_cce_candidates(aggrLevels[aggrIdx], numCandPerAggrLvl[aggrIdx], numCces, candIdx, &cceCandidates[0]);
-            
- 			ps_nr_pdcch_gen_rb_indices(cceRegInterleaverIndices, aggrLevels[aggrIdx], num_coreset_sym, num_coreset_rb, &cceCandidates[0], &rbCandPerAgg[0]);
-            
-			armral_cmplx_int16_t *data_re     = (armral_cmplx_int16_t *)scratchBuf_2;
-
- 			armral_cmplx_int16_t *dmrs_re     = (armral_cmplx_int16_t *)scratchBuf_3;
-
-			armral_cmplx_int16_t *dmrs_ref_re = (armral_cmplx_int16_t *)scratchBuf_4;
-
- 	 		ps_nr_pdcch_reg_to_re_demapping(&rbCandPerAgg[0], aggrLevels[aggrIdx], data_re, dmrs_re, coreset_out_rb_sym); //Input from coreset extraction func
-
-	 		ps_nr_pdcch_dmrs_gen(dmrs_ref_re, cellId, nSlotNum,	coreset_start_sym, num_coreset_sym, num_coreset_rb, aggrLevels[aggrIdx],&rbCandPerAgg[0],scratchBuf_1);
-            
-			armral_cmplx_int16_t *chan_est_re  = (armral_cmplx_int16_t*)scratchBuf_5;
-		
-			ps_nr_pdcch_channel_estimator(dmrs_re, dmrs_ref_re,chan_est_re, scratchBuf_1,n_data_re);
-	        
-			armral_cmplx_int16_t *eq_data_re = (armral_cmplx_int16_t*)scratchBuf_4;
-
-			ps_nr_pdcch_equalizer(data_re,chan_est_re,eq_data_re, n_data_re);
-            
-		    int16_t * llrOut = (int16_t*)scratchBuf_1;
-     
-			ps_nr_qpsk_demodulation(eq_data_re, E, llrOut); 
-				
-			ps_nr_pseudo_random_generator_init(cellId, pnX1, pnX2);
-
-			uint8_t* scrCw = (uint8_t*)scratchBuf_5;
-
-			ps_nr_pseudo_random_generator(E, scrCw, 0, pnX1, pnX2);
-				
-			ps_nr_pdcch_sym_descrambler(llrOut, llrOut, E, scrCw);
-            
-			float * llrOutDerate = (float*)scratchBuf_6;
-        
-			ps_nr_pdcch_deratematching(llrOut,llrOutDerate, N, E, K, scratchBuf_2); //llrOutDerate = scratchBuf_3
-  
-			ps_nr_pdcch_polar_decoder(llrOutDerate, &infoBits[0], &info_bit_pattern[0], &interleaver_pattern[0], scratchBuf_polar, N, K);
-            			
-			crc_check = ps_nr_pdcch_crc_check(&infoBits[0], rnti, K);
-            
-			if(crc_check)
-			{    
-				dci_1_0_si_sib_1_t dci_info;
-				ps_nr_parse_dci_1_0_si_sib_1( &infoBits[0], K-crcLen,&dci_info);
-				
-				printf(" \n DCI_1_0 Scrambled with SI_RNTI Found! \nAggregation Level: %d \nCandidate: %d \nfdra: %d\ntdra: %d\nmapping_type: %d\nmcs: %d\nrv: %d\nsi_ind: %d\n",
-				aggrLevels[aggrIdx],
-				candIdx,
-				dci_info.fdra,
-				dci_info.tdra,
-				dci_info.mapping,
-				dci_info.mcs,
-				dci_info.rv,
-				dci_info.si_ind);
-				break;
-			}
-			else 
-				printf(" No DCI found!\n");		
-			
-		}	
+	// Creating socket file descriptor
+	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+		perror("socket failed");
+		exit(EXIT_FAILURE);
 	}
 
-	rte_free(scratchBuf_polar);
-	rte_free(scratchBuf_6);
-	rte_free(scratchBuf_7);	
-	*/ 	
-	nmm_print("nmm_sib_loop\n");
+	// Forcefully attaching socket to the port 8080
+	if (setsockopt(server_fd, SOL_SOCKET,
+				SO_REUSEADDR | SO_REUSEPORT, &opt,
+				sizeof(opt))) {
+		perror("setsockopt");
+		exit(EXIT_FAILURE);
+	}
+	address.sin_family = AF_INET;
+	address.sin_addr.s_addr = INADDR_ANY;
+	address.sin_port = htons(PORT);
+
+	// Forcefully attaching socket to the port 8080
+	if (bind(server_fd, (struct sockaddr*)&address,
+			sizeof(address))
+		< 0) {
+		perror("bind failed");
+		exit(EXIT_FAILURE);
+	}
+	if (listen(server_fd, 3) < 0) {
+		perror("listen");
+		exit(EXIT_FAILURE);
+	}
+	if ((new_socket
+		= accept(server_fd, (struct sockaddr*)&address,
+				(socklen_t*)&addrlen))
+		< 0) {
+		perror("accept");
+		exit(EXIT_FAILURE);
+	}
+	
+    n= read(new_socket, buffer, 1024);
+    printf("%s\n", buffer);
+    send(new_socket, hello, strlen(hello), 0);
+    //printf("Server is connected\n");
+
+while(1)
+
+{
+    bzero(buffer, 1024);
+    n = read(new_socket, buffer, 1024);
+    if(n<0)
+        perror("Error on reading.");
+    printf("%s\n",buffer);
+		//Case to identify command type and send it to controller for processing
+
+    parse_t *myobj = malloc(sizeof(parse_t));
+	int status = json_myobj_read(buffer, myobj);
+
+    if (status == 0) {
+        nmm_print_dbg("msg_type: %d\n", myobj->msg_type);
+        nmm_print_dbg("gscn: %d\n", myobj->gscn);
+    } else {
+        puts(json_error_string(status));
+    }
+    switch(myobj->msg_type){
+		case 0:
+			fapi_req = (fapi_request_ssb_t *)request;
+			fapi_req->message_type = BAND_SCAN_N77_REQUEST;
+			ret = nmm_fapi_send_request((fapi_request_t*)fapi_req);
+			if (ret)
+			printf("Error in band scan  n77 request\n");  
+		   
+		break;
+
+		case 1:
+			fapi_req = (fapi_request_nr_t *)request;
+			fapi_req->message_type = CELL_FOLLOW_REQUEST;
+			cf_req = (nr_cell_follow_request_t *)&fapi_req->message_body;
+			cf_req->gscn = myobj->gscn;
+			ret = nmm_fapi_send_request((fapi_request_t*)fapi_req);
+			if (ret < 0)
+			printf("Error in cell follow request\n");
+
+		break;
+
+		case 2:
+            fapi_req = (fapi_request_nr_t *)request;
+	        fapi_req->message_type = CELL_FOLLOW_MIB_REQUEST;
+	        cfb_req = (nr_cell_follow_request_t *)&fapi_req->message_body;
+	        cfb_req->gscn = myobj->gscn;
+	        ret = nmm_fapi_send_request((fapi_request_t*) fapi_req);
+	        if (ret < 0)
+		   printf("Error in cell follow request\n");
+		  /* sprintf(reply,"{\"SFN\":%d",nmm_info->mib_info.systemFrameNumber);
+		   send(new_socket, reply, strlen(reply),0);
+            if (n<0)
+              perror("Error on writing.");*/
+		break; 
+		case 3:
+			fapi_req = (fapi_request_ssb_t *)request;
+			fapi_req->message_type = CELL_FOLLOW_STOP_REQUEST;
+	
+			ret = nmm_fapi_send_request((fapi_request_t*)fapi_req);
+			if (ret < 0)
+			printf("Error disabling test mode\n");
+			break;
+
+		default:
+		printf("Message type not supported");
+		break;
+
+	}
+
+	    
+		/*int i = strncmp("Disconnect", buffer,3);
+        if(i==0)
+        break;*/
+        bzero(buffer, 1024);
+		/*if(myobj->msg_type==0)
+		char reply[400];
+		sprintf(reply,"structures",structures);*/
+
+        //fgets(buffer, 1024, stdin);
+       send(new_socket, reply, strlen(reply),0);
+        if (n<0)
+            perror("Error on writing.");
+
+}
+close(new_socket);
+close(server_fd);
+return 0;
+}
+
 	return 0;
 }
 
@@ -7630,10 +7658,10 @@ int nmm_init(struct nmm_cb *cbs)
 
 	lcore_id = rte_get_next_lcore(lcore_id, 0, 1);
 
-	nmm_print_dbg("nmm_sib_loop: waiting for messages on core %d\n",
+	nmm_print_dbg("server_init: waiting for messages on core %d\n",
 				  rte_lcore_index(lcore_id));
 
-	rte_eal_remote_launch(nmm_sib_loop, NULL, lcore_id);
+	rte_eal_remote_launch(server_init, NULL, lcore_id);
 
 	nmm_print("NMM Library initialized (%s)\n", lib_ver);
 

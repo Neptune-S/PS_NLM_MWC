@@ -15,7 +15,6 @@ void ps_nr_pdcch_deratematching(int16_t* llr, float* llrOut, uint16_t N, uint16_
     uint16_t n;
     uint16_t S;
 
-
     memset(temp, 0, 1728*sizeof(int16_t));
 
     // repetition case
@@ -54,13 +53,12 @@ void ps_nr_pdcch_deratematching(int16_t* llr, float* llrOut, uint16_t N, uint16_
     uint16_t  j = 0;
     uint16_t i;
     uint16_t fact = N >> 5;
-    uint16_t shift = log2(fact);
     const uint8_t P[32] = { 0,1,2,4,3,5,6,7,8,16,9,17,10,18,11,19,12,20,13,21,14,22,15,23,24,25,26,28,27,29,30,31 };
     uint16_t pbchDeRateMatchIndices[N];
     for (i = 0; i < N; i++)
     {
-        j = i >> shift;
-        pbchDeRateMatchIndices[i] = (P[j] << shift) + (i - ((i >> shift) << shift));
+        j = ((32 * i) / N);
+        pbchDeRateMatchIndices[i] = (P[j] * fact) + i % fact;
         llrOut[pbchDeRateMatchIndices[i]] = (float)temp[i];
     }
 

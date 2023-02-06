@@ -32,7 +32,16 @@
 
 #include "nmm_lib.h"
 
+#include<stdio.h>
+#include<stdlib.h>
+#include<string.h>
+#include<unistd.h>
+#include<sys/types.h>
+#include<sys/socket.h>
+#include<netinet/in.h>
+
 #define APP_VERSION	"1.1"
+
 
 static struct cmdline *cl;
 static int scan_in_progress = 0;
@@ -1727,6 +1736,12 @@ int main(int argc, char **argv)
 		printf("nmm_init failed\n");
 		return ret;
 	}
+
+	/*ret = server_init();
+	if(ret < 0) {
+        printf("Server initialisation failed.\n");
+		return ret;
+	}*/
 
 	cl = cmdline_stdin_new(nmm_test_ctx, "nmm> ");
 	if (!cl) {
