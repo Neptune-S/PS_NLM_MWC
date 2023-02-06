@@ -1,0 +1,1 @@
+cmd_librte_mempool_octeontx2.a = /opt/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-ar crDs librte_mempool_octeontx2.a otx2_mempool_ops.o otx2_mempool.o otx2_mempool_irq.o otx2_mempool_debug.o 

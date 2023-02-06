@@ -1,0 +1,10 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/deepika/21_sept_macro_changes/PS_NLM_5G_LAT/nlm_controller/Demo/CORTEX_M4_NXP_LA9310_GCC/platform/ARM_CM4/start.S
+

@@ -1,0 +1,68 @@
+// =============================================================================
+//! @file           fftBR512HP.s
+//! @brief          IPPU procedure to undo bit reversal of half precision DIF FFT
+//! @copyright      &copy; 2014 Freescale Semiconductor, Inc.
+// =============================================================================
+
+// =============================================================================
+// fftBR512HP(
+//     unsigned int *pout,
+//     unsigned int *pbuf);
+//
+// arg0: pout = output buffer base address.
+// arg1: pbuf = input circular buffer base address.
+//
+// This procedure reorders the output of the DIF 512 function to get linearly ordered FFT output
+//
+// =============================================================================
+
+    .ippu
+
+    .section    .itext
+    .global     _fftBR512HP
+    .type       _fftBR512HP, %function
+
+_fftBR512HP:
+   // -------------------------------------------------------------------------
+    // Load input arguments:
+    // -------------------------------------------------------------------------
+ 	 mv as0, 0;            //11392     // Load fftDIF's output buffer address.
+	 mv as1, 1024;              // 512 samples in input , so total 512 * 2 memory increment for output result buffer address.
+	   
+ 	mv mem_elem_rd_ptr, 0;
+	mv mem_elem_wr_ptr, 0;
+	mv r_rd_ptr, 0;
+ 	mv r_wr_ptr, 0;
+
+ 	set.range a0, as0, 1024;
+ 	set.br a0, fft512;
+ 	mv m0, 64;
+ 	mv a0, as0;
+ 	mv a1, as1;
+
+ 	set.loop 0, 8;
+ 	set.loop 1, 63;
+
+ 	loop_begin 0;
+ 	mv r_wr_ptr, 0;
+
+ 	ld.vcpu [a0]+2, 0, br, +8, e32; loop_begin 1;loop_end 1;
+ 	ld.vcpu [a0]+0, 0, br, +8, e32;
+ 	nop;
+	nop;
+ 	st.vcpu [a1]+m0, 0,normal, -1, normal;	//st.vcpu [a1]+m0, 0, normal, 0, normal;  loop_end 0;
+ 	nop;
+ 	st.vcpu [a1]+m0, 0, normal, +1, normal; 
+ 	add a0, +2;
+ 
+ 
+	loop_end 0;
+  
+ 	nop;
+
+ 	done;
+ 	nop;
+ 	nop;
+ 	
+   .size   _fftBR512HP, .-_fftBR512HP
+ 

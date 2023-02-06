@@ -1,0 +1,69 @@
+
+#include "vspa2_fw.h"
+
+// _VR  = # of halfwords of one  VRA register
+// _VRH = # of halfwords of half VRA register
+#define _VR     (__AU_COUNT__*4)
+#define _VRH    (__AU_COUNT__*2)
+
+
+// === === //
+    .global  _clr_buff_asm
+    .type    _clr_buff_asm, @function
+    .size _clr_buff_asm, _clr_buff_asm_end -_clr_buff_asm
+_clr_buff_asm:	
+	/* 
+	a0 = buffer (g0 lines)
+	g0 = Number of lines to be cleared
+	*/
+	
+	clr.VRA;
+	set.loop g0,1;
+	mv g1, 0;	
+	fill.w [rV], g1;
+	st.laddr [a0]+1;		loop_begin;loop_end;
+	rts;
+	fnop;
+	fnop;																
+	_clr_buff_asm_end:
+//====================== clr_buff_asm (ENDs) ========================//
+
+
+// === === //
+    .global  _ifftshift_buff_format
+    .type    _ifftshift_buff_format, @function
+    .size _ifftshift_buff_format, _ifftshift_buff_format_end -_ifftshift_buff_format
+_ifftshift_buff_format:	
+	/* 
+	a0 = Address of Real 128 points fixed16_t type SSS seq
+	a1 = Output address of clear ( all set to zero ) 512 cfixed16_t vector alligned buffer 
+	a2 = Sub end High address 
+	g0 = Number of lines to be cleared
+	
+	 Real, {1,2, ... 128} sss seq => complex {1+0j, 2+0j, ..... 128+0j}
+	 						    Start addr(a0)		    sub end low(a1)							    sub end high(a2)
+	 Output 512 cfixed16_t : {  65+0j,     66+0j.......     128+0j,    0+0j, 0+0j,........0+0j, 0+0j,     1+0j,     2+0j,.......64+0j} 
+	*/
+	
+	clr.VRA;
+	ld.laddr [a0]+0;										   	set.prec half_fixed, half_fixed, half_fixed, single, half_fixed						
+	ld.laddr [a0]+1;										   	set.VRAptr rS1, 0*_VRH;
+	ld.laddr [a0]+0;	
+	ld.laddr [a0]+0;	ld.h2l R0; 							   	set.Smode S0real1, S1r2c_im0, S2zeros;
+						ld.l2h R0;		rd S0; rd S1;rd S2;		set.VRAptr rS1, 1*_VRH;
+						ld.h2l R0;		rd S0; rd S1;rd S2;		set.VRAptr rS1, 0*_VRH;		 	
+						ld.l2h R0;		rd S0; rd S1;rd S2;		set.VRAptr rS1, 1*_VRH;		rmad;
+										rd S0; rd S1;rd S2;		set.VRAptr rV,  4*_VR;		rmad;
+																set.VRAptr rSt, 4;			rmad;
+																							rmad;
+										wr.straight;
+										wr.straight;			st.laddr [a2]+1;
+										wr.straight;			st.laddr [a2]+1;
+										wr.straight;			st.laddr [a1]+1;
+																st.laddr [a1]+1;
+	rts;
+	fnop;
+	fnop;																
+_ifftshift_buff_format_end:
+//====================== ifftshift_buff_format (ENDs) ========================//
+

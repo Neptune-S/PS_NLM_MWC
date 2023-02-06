@@ -1,0 +1,215 @@
+/**
+ * @file        la9310_nmm_sim.lcf
+ * @brief       LA9310 linker configuration file for NLM application on simulator.
+ * @copyright   Copyright 2021 NXP
+ */
+/*  NXP Confidential. This software is owned or controlled by NXP and may only be used strictly
+ *  in accordance with the applicable license terms. By expressly accepting
+ *  such terms or by downloading, installing, activating and/or otherwise using
+ *  the software, you are agreeing that you have read, and that you agree to
+ *  comply with and are bound by, such license terms. If you do not agree to
+ *  be bound by the applicable license terms, then you may not retain,
+ *  install, activate or otherwise use the software.
+ */
+// -----------------------------------------------------------------------------
+// Memory sizes in bytes:
+// -----------------------------------------------------------------------------
+
+//SIZE_PRAM_VCPU = (32*1024);
+OVERLAY_SIZE   = 0xF00;
+SIZE_PRAM_VCPU = (32*1024 + 5*OVERLAY_SIZE);
+SIZE_PRAM_IPPU = (2*1024);
+
+SIZE_DRAM_VCPU = (16*1024);
+SIZE_DRAM_IPPU = (16*1024);
+SIZE_DRAM_VSPA = SIZE_DRAM_VCPU+SIZE_DRAM_IPPU;
+
+ORIGIN_DTCM    = (0x20000000);
+SIZE_DTCM      = (64*1024);
+SIZE_ITCM	   = (128*1024);
+SIZE_HOST      = (1024*1024*1024);
+
+VCPU_OFFSET = 0x0000;
+
+
+VPRAM_SIZE = SIZE_PRAM_VCPU - 5*OVERLAY_SIZE;
+
+arch(vspa2);
+entry("_start");
+number_of_cores(1);
+
+memory_space (*)
+{
+    0 ("rx"):   vprog,  org = 0x00000000, len = 4*SIZE_PRAM_VCPU;
+    1 ("rw"):   vdata,  org = VCPU_OFFSET, len = SIZE_DRAM_VSPA+VCPU_OFFSET;  // TKT331844.
+    2 ("rx"):   iprog,  org = 0x00000000, len = SIZE_PRAM_IPPU;
+    4 ("rwx"):  edata,  org = 0x00000000, len = 0xFFFFFFFF;     // Maximum allocatable space.
+}
+
+unit private (*) {
+    // -------------------------------------------------------------------------
+    // Memory regions:
+    // -------------------------------------------------------------------------
+    MEMORY
+    {
+        .vpram          	("rx")  0: org = 0x00000000,    		len = VPRAM_SIZE;
+		.tools          	("rx")  0 : AFTER(.vpram),				len = OVERLAY_SIZE;
+        .cell_search    	("rx")  0 : AFTER(.tools),	   			len = OVERLAY_SIZE;
+        .cell_search_csrs   ("rx")  0 : AFTER(.cell_search),	   	len = OVERLAY_SIZE;
+        .cell_follow    	("rx")  0 : AFTER(.cell_search_csrs),	len = OVERLAY_SIZE;
+        .cell_follow_track  ("rx")  0 : AFTER(.cell_follow),		len = OVERLAY_SIZE;
+        .mib_extract     	("rx")  0 : AFTER(.cell_follow_track),	len = OVERLAY_SIZE;
+        .ch_est_pbch     	("rx")  0 : AFTER(.mib_extract),		len = OVERLAY_SIZE;
+        .ch_eq_pbch     	("rx")  0 : AFTER(.ch_est_pbch),		len = OVERLAY_SIZE;
+        .mib_proc     		("rx")  0 : AFTER(.ch_eq_pbch),			len = OVERLAY_SIZE;
+
+        .dmem_cmdbuf    ("rwx") 1: org = VCPU_OFFSET, len = 0x100;
+        .vdram          ("rw")  1: org = 0x100, len = 0x3F00;
+        .idram          ("rw")  1: org = SIZE_DRAM_VCPU, len = 0x4000;
+
+        .ipram          ("rx")  2: org = 0x00000000;
+
+        dtcm_tables     ("rwx") 4: org = ORIGIN_DTCM,  len = 0x7c00;   // CM4 data TCM.
+        dtcm_symbol     ("rwx") 4: AFTER(dtcm_tables), len = 0x4400;   // CM4 data TCM.
+//        itcm            ("rwx") 4: org = 0x1F800000, len = SIZE_ITCM;   // CM4 code TCM.
+//        host            ("rwx") 4: org = 0xA0000000, len = SIZE_HOST;   // PCIe address space.
+
+    }
+
+    // -------------------------------------------------------------------------
+    // Image sections:
+    // -------------------------------------------------------------------------
+    SECTIONS
+    {
+        .tools {
+        	.=align(16);
+            .text.tools
+            .=align(16);
+        } > .tools;
+
+        .cell_search {
+        	.=align(16);
+            .text.cs_code
+            .=align(16);
+        } > .cell_search;
+        
+        .cell_search_csrs {
+        	.=align(16);
+            .text.cs_csrs_code
+            .=align(16);
+        } > .cell_search_csrs;
+        
+        .cell_follow {
+        	.=align(16);
+            .text.cf_code
+            .=align(16);
+        } > .cell_follow;
+        
+        .cell_follow_track {
+        	.=align(16);
+            .text.cf_track_code
+            .=align(16);
+        } > .cell_follow_track;
+
+        .mib_extract {
+        	.=align(16);
+            .text.pbch_sc_code
+            .=align(16);
+        } > .mib_extract;
+        
+        .ch_est_pbch {
+        	.=align(16);
+            .text.ch_est
+            .=align(16);
+        } > .ch_est_pbch;
+        
+        .ch_eq_pbch {
+        	.=align(16);
+            .text.ch_eq
+            .=align(16);
+        } > .ch_eq_pbch;
+        
+        .mib_proc {
+        	.=align(16);
+            .text.mib_decoder
+            .=align(16);
+        } > .mib_proc;
+        
+        
+        .vpram {
+            ___pram_start = .;
+            ".init"
+            ".text"
+            unmatch_pgm("*");
+            ___pram_limit = .;
+        } > .vpram;
+
+        .dmem_cmdbuf {
+            ".cmdbuf"
+        } > .dmem_cmdbuf;
+
+        .vdram {
+            ___data_start = .;
+            .scratch
+            ".rodata.fft"
+            ".rom.*"
+            ".rodata.*"
+            ".rom"
+            ".data.*"
+            ".data"
+            unmatch_data("*");
+            ".bsstab"
+            ___data_limit = .;
+
+            __bss_start = .;
+            ".bss.rx.ippu"
+            ".bss.*"
+            ".bss"
+            ".vbss"
+            unmatch_bss("*");
+            __bss_limit = .;
+            __bss_end = .;
+
+            . = align(n_au()*2*4);
+            ___stack_start = .;
+            __stack = .;
+            __heap = .;
+            ___stack = .;
+            ___stack_limit = vmorg(".dmem_cmdbuf") + SIZE_DRAM_VCPU - 256;
+
+            . = vmorg(".dmem_cmdbuf") + SIZE_DRAM_VCPU - 256;
+            __ippu_arg_start = .;
+            ".ibss"
+        } > .vdram
+        
+        .idram {
+       		.large_buffer
+        } > .idram
+
+        .ipram {
+            ".itext"
+        } > .ipram;
+
+        .dtcm_tables {
+        	.psstd_table
+            .sss_table
+            .xcorr_table
+        } > dtcm_tables;
+
+        .dtcm_symbol {
+            .tcm_out
+            .tcm_sym            
+        } > dtcm_symbol;
+        
+//        .host {
+//            ".host";
+//            ".host.*";
+//        } > host;
+
+    }
+}
+
+___pram_size = ___pram_limit - ___pram_start;
+___data_size = ___data_limit - ___data_start;
+__bss_size = __bss_limit - __bss_start;
+___stack_size = ___stack_limit - ___stack_start;

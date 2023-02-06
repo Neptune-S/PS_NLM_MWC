@@ -1,0 +1,1 @@
+cmd_librte_bus_vmbus.a = /opt/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-ar crDs librte_bus_vmbus.a linux/vmbus_bus.o linux/vmbus_uio.o vmbus_common.o vmbus_channel.o vmbus_bufring.o vmbus_common_uio.o 

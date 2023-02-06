@@ -1,0 +1,168 @@
+//--------------------------------------------------------------------------
+// Copyright (c) 2019, NXP
+// NXP SEMICONDUCTOR CONFIDENTIAL PROPRIETARY
+//
+//--------------------------------------------------------------------------
+
+// =============================================================================
+//! @file           pssdet_rssi_asm.sx
+//! @brief          RSSI ASSEMBLY source file.
+//! @author         NXP Semiconductors.
+//! @copyright      Copyright (C) 2017-2018 NXP Semiconductors.
+// =============================================================================
+//#include "vspa.h"
+#define SIZEMAU					(2)	
+#define UPHW                    SIZEMAU
+#if UPHW==4
+    #define LOG2UPHW 2
+#elif UPHW==2
+    #define LOG2UPHW 1
+#elif UPHW==1
+    #define LOG2UPHW 0
+#else
+    #error "unsupported UPHW"
+#endif
+
+// _VR  = # of halfwords of one  VRA register
+// _VRH = # of halfwords of half VRA register
+#define _VR     (__AU_COUNT__*4)
+#define _VRH    (__AU_COUNT__*2)
+
+#define U2   ( 2 * UPHW)
+#define U60  (60 * UPHW)
+#define U62  (62 * UPHW)
+
+    .global  _power_sum_256_sp_asm
+    .type    _power_sum_256_sp_asm, @function
+    .size _power_sum_256_sp_asm, _power_sum_256_sp_asm_end -_power_sum_256_sp_asm
+_power_sum_256_sp_asm:
+ /*           
+       Compute:
+           compute scalar:       y      = sum(x(1:256))
+            
+       agX:
+            a0: x
+            a1: Base of circular buffer
+            g0: Size of circular buffer in half-words
+            g1: y
+                 
+    */
+    //set.VRArange1 rS0,0,4*_VR;
+    set.VRAptr rV,0*_VR; 
+    set.prec single, single, single, single, single;
+    set.Smode S0straight,S1real1,S2zeros;     
+    ld.laddr [a0]+1;    clr.VRA;  
+    ld.laddr [a0]+1;   
+    ld.laddr [a0]+1;    set.VRAincr rS0,_VR;
+    ld.laddr [a0]+1;    ld.normal R0;   
+    ld.laddr [a0]+1;    ld.normal R1;   rd S0;rd S1;rd S2;	
+    ld.laddr [a0]+1;    ld.normal R2;   rd S0;
+    ld.laddr [a0]+1;    ld.normal R3;   rd S0;                      					 rmad;																		
+	ld.laddr [a0]+0;    ld.normal R0;   rd S0;  set.VRAptr rS0,0*_VR;                    rmac;
+                        ld.normal R1;   rd S0;                      					 rmac;      										
+                        ld.normal R2;   rd S0;                      					 rmac;                          					
+	                    ld.normal R3;   rd S0;       									 rmac;
+                                        rd S0;                      					 rmac; 
+                                                                    					 rmac;
+                                                                    					 rmac;                           
+                                        set.VRAptr  rS0, 0*_VR; set.rot R0r2;
+                                        set.VRAincr rS0, 0*_VR; 
+                                        set.loop 31,2; 
+                                                                    wr.straight;                                                                 
+	rd S0;rd S1;rd S2;  ror;
+	fnop;                                                        
+                       rd S0; ror;      rmad;
+                       					fnop;  loop_begin;
+                       rd S0; ror;      rmac;  loop_end;
+	                                    fnop; 
+                                        fnop;
+                                        fnop; 
+                                                                    wr.straight;             
+    rd S0;   
+    fnop;                                         
+    mv.w g0,[rS0];                                                                                                                   
+    rts;
+    fnop;
+    fnop;                                                                                     
+_power_sum_256_sp_asm_end:
+
+
+ 	.global  _sum_512_hfx_power_asm
+    .type    _sum_512_hfx_power_asm, @function
+    .size _sum_512_hfx_power_asm, _sum_512_hfx_power_asm_end - _sum_512_hfx_power_asm
+_sum_512_hfx_power_asm:
+ /*           
+       Compute:
+           compute scalar:       y = abs(sum(x(1:512))).^2
+            
+       agX:
+            a0: x
+            a1: Base of circular buffer
+            g0: Size of circular buffer in half-words
+            g1: Not Used
+                 
+    */
+
+    
+    clr.VRA;
+    set.VRAptr rS0,0;
+    set.VRAincr rS0, _VRH;
+    set.VRArange1 rS0,0,_VRH;
+    set.prec half_fixed, single, single, single, single;
+    set.Smode S0hlinecplx,S1real1,S2zeros;     
+    ld.laddr [a0]+1;    set.VRAptr rV,0*_VR; 
+                        set.loop  12, LS, LE; 
+    ld.laddr [a0]+1;                    
+                        ld.normal R0;   
+    ld.laddr [a0]+1;                    rd S0;rd S1;rd S2;	
+                        ld.normal R0;   rd S0;
+    ld.laddr [a0]+1;                    rd S0;                                        	 rmad;																		
+	                    ld.normal R0;   rd S0;                                           rmac;
+                                        rd S0;                      					 rmac;      										
+                        ld.normal R0;   rd S0;                      					 rmac;                          					
+	                                    rd S0;       									 rmac;
+                        ld.normal R0;   rd S0;                      			     	 rmac; 
+                                                                                         rmac; 
+                                                                                         rmac;
+                                                                                         fnop;
+LS: ld.laddr [a0]+1;                                                                    loop_begin;
+                                        fnop;
+                                        fnop;
+                         ld.normal R0;
+                                        rd S0;
+                                        fnop;
+										rd S0;	   										 rmac;
+										fnop;	
+LE:																					  	 rmac;  loop_end; 	                                       
+    set.prec single, single, single, single, single;                					    
+                                        set.VRAptr  rS0, 0*_VR; set.rot R0r4;
+                                        set.VRAincr rS0, 0; 		set.Smode S0straight,S1real1,S2zeros;
+                                        set.loop 15,2;              
+                                                                    wr.hlinecplx;                                                                  
+	rd S0;rd S1;rd S2;  ror;
+	set.VRAptr  rV, 0*_VR;                                                        
+                       rd S0; ror;      rmad;
+                       					fnop;  loop_begin;
+                       rd S0; ror;      rmac;  loop_end;
+	                                    set.VRAptr rS0, 0*_VR;  
+                                        set.VRAptr rS1, 0*_VR;
+                      					set.VRAptr rV,  0*_VR;            			set.Smode S0straight,S1straight,S2zeros;
+                                                    				wr.straight;             
+    rd S0;rd S1;rd S2;   
+    fnop;          
+    				  cmad;
+    				  fnop;
+    				  fnop;
+    				  set.VRAptr rS0, 0*_VR;
+    				  												wr.straight; 	
+    				  rd S0;
+    				  fnop; 																					                             
+    mv.w g0,[rS0];              
+    fnop;
+    fnop;                                                                                                     
+    rts;
+    fnop;
+    fnop;                                                                                     
+_sum_512_hfx_power_asm_end:
+
+

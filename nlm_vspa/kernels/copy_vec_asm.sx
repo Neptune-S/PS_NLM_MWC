@@ -1,0 +1,95 @@
+// =============================================================================
+//! @file           copy_vec_asm.sx
+//! @brief          Assembly functions to copy 128 samples.
+//! @copyright      Copyright 2021 NXP
+// =============================================================================
+/*  NXP Confidential. This software is owned or controlled by NXP and may only be used strictly
+ *  in accordance with the applicable license terms. By expressly accepting
+ *  such terms or by downloading, installing, activating and/or otherwise using
+ *  the software, you are agreeing that you have read, and that you agree to
+ *  comply with and are bound by, such license terms. If you do not agree to
+ *  be bound by the applicable license terms, then you may not retain,
+ *  install, activate or otherwise use the software.
+ */
+#include "vspa2_fw.h"
+
+// For bit-shifting to translate peak index of extrema search engine into DMEM pointer offset
+#if UPHW==2
+    #define LOG2UPHW 1
+#elif UPHW==1
+    #define LOG2UPHW 0
+#else
+    #error unsupported UPHW
+#endif
+
+// _VR  = # of halfwords of one  VRA register
+// _VRH = # of halfwords of half VRA register
+#define _VR     (__AU_COUNT__*4)
+#define _VRH    (__AU_COUNT__*2)
+
+
+// === === //
+    .global  _copy_vec_asm
+    .type    _copy_vec_asm, @function
+    .size _copy_vec_asm, _copy_vec_asm_end -_copy_vec_asm
+_copy_vec_asm:	
+	/* 
+	a0 = input pointer (mem aligned)
+	a1 = output pointer (mem aligned)
+	g0 = number of lines (multiple of 1024 bits)
+	*/
+	
+	clr.VRA;
+	ld.laddr [a0]+1;
+	ld.laddr [a0]+1;
+	ld.laddr [a0]+1;
+	ld.laddr [a0]+1;	ld.normal R0;	
+						ld.normal R1;	
+						ld.normal R2;	
+						ld.normal R3;
+	st.laddr [a1]+1;						set.VRAptr rSt, 1;
+	rts;				st.laddr [a1]+1;	set.VRAptr rSt, 2;
+	st.laddr [a1]+1;						set.VRAptr rSt, 3;
+	st.laddr [a1]+1;	
+	
+	_copy_vec_asm_end:
+//====================== copy_vec_asm (ENDs) ========================//
+
+
+    .global     _veccpy
+    .type       _veccpy, %function
+    .size       _veccpy, _veccpy_end - _veccpy
+
+_veccpy:
+    mv a2, g0;          ld.laddr [a1]+1
+    set.loop a2, 2
+    clr.VRA;            ld.laddr [a1]+1
+                                            ld.normal R0
+                        ld.laddr [a1]+1;                    loop_begin
+                        st.laddr [a0]+1;    ld.normal R0;   loop_end
+    rts
+    fnop
+    fnop
+_veccpy_end:
+
+  .global     _memsetveccirc
+    .type       _memsetveccirc, %function
+    .size       _memsetveccirc, _memsetveccirc_end - _memsetveccirc
+
+    .global     _memsetvec
+    .type       _memsetvec, %function
+    .size       _memsetvec, _memsetvec_end - _memsetvec
+
+_memsetveccirc:
+    set.range   a0, a1, g2
+_memsetvec:
+    set.loop    g1, 1
+    clr.vra
+    fill.w [rv], g0
+    sta.laddr   [a0]+1; loop_begin; loop_end;
+    rts
+    mv          a1, 0
+    set.range   a0, a1, 0
+_memsetvec_end:
+_memsetveccirc_end:
+

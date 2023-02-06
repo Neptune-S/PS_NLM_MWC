@@ -1,0 +1,316 @@
+//--------------------------------------------------------------------------
+// Copyright (c) 2019, NXP
+// NXP SEMICONDUCTOR CONFIDENTIAL PROPRIETARY
+//
+//--------------------------------------------------------------------------
+
+// =============================================================================
+//! @file           sssdet_asm.sx
+//! @brief          Assembly functions to support 5GNR SSS detector.
+//! @author         NXP Semiconductors.
+//! @copyright      Copyright (C) 2018 NXP Semiconductors.
+// =============================================================================
+
+#include "vspa2_fw.h"
+
+// For bit-shifting to translate peak index of extrema search engine into DMEM pointer offset
+#if UPHW==4
+    #define LOG2UPHW 2
+#elif UPHW==2
+    #define LOG2UPHW 1
+#elif UPHW==1
+    #define LOG2UPHW 0
+#else
+    #error unsupported UPHW
+#endif
+
+
+// _VR  = # of halfwords of one  VRA register
+// _VRH = # of halfwords of half VRA register
+#define _VR     (__AU_COUNT__*4)
+#define _VRH    (__AU_COUNT__*2)
+#define U2  ( 2 * UPHW)
+#define U4  ( 4 * UPHW)
+#define U6  ( 6 * UPHW)
+#define U8  ( 8 * UPHW)     
+#define U24 (24 * UPHW)
+
+//====================== sssdet_sgemv_v3 (ENDs) ========================//
+
+// === === //
+    .global  _sssdet_hpgemv_v1
+    .type    _sssdet_hpgemv_v1, @function
+    .size _sssdet_hpgemv_v1, _sssdet_hpgemv_v1_end -_sssdet_hpgemv_v1
+_sssdet_hpgemv_v1:
+    // xcn = abs(y2).^2, . "xcn" means "xcorr normalized".
+    //a0: sss equalized
+    //a1: ptr to scratch buffer (336 cSP)
+    //a2: store & load ptr for y2
+    //a3: store and ptr for y1
+    //a4: D0 ptr 
+    //a5: D1 read ptr
+    //a6: D1 reload ptr
+    //a7: ssdet out ptr
+    //
+    //g0: id2 
+    //g1: id2 x (128x3bits) = id2 x 24 halfwords
+    //
+    // example VRArange: 
+    //  R2[0]..R2[4]:   0x00840080  
+    //  R4..R7 wrap:    0x01C00100
+    //  R5..R7 wrap:    0x01C00140 
+    //
+    //VRA usage: see spreadsheet in "doc" folder
+    
+    // xtrm takes the Number of HALF-word elements regardless of S2 precision
+    #define SIZE_XTRM_ELEM ( (336)*2 )
+    
+    // This function uses ld.qam to load D0 and D1 sequence of SSS (stored as bits in DMEM), into VRA (in half-fixed format) 
+    //  Use 4QAM mapping: bit0 <=> -0.125; bit1 <=> 0.125
+    //  Read Table 4-23 in ISM to understand how ld.qam works. Read "Section 14.5.1 VSPA Memory Map" in ISM to know how to set related IP registers.
+    //
+    // In IPreg 0x40 (word addr; ByteAddr=0x100, used in ISM "Load Register File Control register"): 
+    //      Mode = "2" for Mode=2 (4QAM). ByteAddr = 0x100.
+    //      BPSK,4QAM,16QAM only use Real0 (=IPreg 0x41) and Imag0(=IPreg0x41). 64qam and 256qam use Real0..7 and Imag0..7.
+    // In IPreg 0x41 (Real0)
+    //      8 of 4-bit are denoted by cp0..cp7. In each cp: "00"=1,"10"=-1 for 4QAM. ("01"=3 and "10"=-3, used for 16QAM) 
+    //      4QAM only uses CP3..CP0, each CP represented by 2-bit. "CP" means "coefficient pair".
+    //      [CP3 CP2 CP1 CP0] = 0x22 = 00_10_00_10b <=> {1,-1,  1,-1} as Four "modulation values" for real part    
+    // In IPreg 0x42 (Imag0) 
+    //      [CP3 CP2 CP1 CP0] = 0x0a = 00_00_10_10b <=> {1, 1, -1,-1} as Four "modulation values" for imag part
+    // Read from left to right, Real0,Imag0 form the complex symbol set (or "coefficient" set if using ISM terminology)
+    //                       {-1-1j     1-1j    -1+1j   1+1j}, corresponding to 
+    //            b1b0 pairs {00,       01,     10,     11}. This is WiFi's QPSK mapping: bit 0 mapped to -1; bit 1 to 1.
+    
+    //=== stage 1: compute 336x127 times 127x1. Result in 336x1 cSP ===// 
+    mpy g1,g0, (24 * UPHW);     // advance D0 ptr by ID2 x (128x3bits) = ID2 x 24halfwords.        
+    
+    // ld.qam (4QAM)    
+    mvip 0x40, 2;                 
+    mvip 0x41, 0xffffff22;        
+    mvip 0x42, 0xffffff0a;
+    
+    // get pointers to tables            
+    add a2, a1, (512 * UPHW);    
+    mv a4, _SSSDET_REF_D0;    
+    mv a5, _SSSDET_REF_D1;
+    add a6, a5, U8;
+    add a5, U4;          mvB a3, a1;
+    
+    ld [a4] + g1;                                                                               clr.VRA; // Which set of {b0a,b0b,b0c} to use depends on ID2    
+    ld [a4] + U4;                                                                               set.creg 255, 0;                                  
+    ld.laddr [a0]+1;                                                                            set.prec half, half_fixed, single,single,single;                                                            
+    ld.laddr [a0]+1;                                                                            set.VRAincr rS1, _VRH;                                            
+    ld.laddr [a0]+1;    ld.qam R2;                                                              set.VRAptr  rS1,2*_VR;
+                        ld.h2l R0;                                                              set.loop 3, SD0xHP, ED0xHP; // Loop: 3 iters for {d0a, d0b, d0c} sequences. d0x is 127x1 in rHFix, defined in SSS, loaded from b0x (128x1 bits)                                                                      
+    ld [a4] + U4;       ld.l2h_h2l R0;                                                          set.Smode S0straight,S1r2c,S2zeros;
+    ld.laddr [a0]+1;    ld.l2h R1;                                                              set.VRAincr  rS0, 1*_VR;
+    ld.laddr [a0]-4;    ld.h2l R0;          rd S0;  rd S1;  rd S2;                              set.creg 19, 1;    // wr y1a_1..32 into two Rx     // postdecr to s[0] to be ready for next d0 sequence
+                        ld.qam R3;          rd S0;  rd S1;                                      set.VRAptr  rS0, 0*_VR; set.VRAincr rSt, 1;
+SD0xHP: ld [a5]-U4;     ld.l2h_h2l R0;                                  rmad;                   set.rot R0R1r1;         loop_begin; 
+    ld [a5] +U6;        ld.l2h R1;          rd S0;  rd S1;              rmad;                   set.VRAptr  rV, 4*_VR;                                                
+                                            rd S0;  rd S1;                                      set.prec single, half_fixed, single,single,single;                                    
+                        ld.qam R1;                                      rmad;                   set.VRAincr rS0, 4;     set.VRAincr rS1, 0;          // 1cSP=4hw     
+                        ld.qam R0;                                      rmad;   wr.straight;    set.VRAptr  rS0, 4*_VR; set.VRAptr  rS1, 0*_VR;    
+                                            rd S0;  rd S1;  rd S2; ror;                         set.VRAptr rV, 6*_VR;   set.Smode S0i1r1i1r1, S1r2c, S2zeros;
+                                            rd S0;  rd S1;         ror;         wr.straight;    set.VRAptr rV, 2*_VR;   set.VRAptr  rSt, 2;    
+                                            rd S0;  rd S1;         ror;    rmad;wr.straight;    set.loop 45, 1;
+    st.laddr [a3]+1;                        rd S0;  rd S1;         ror; rmac;                    
+    st.laddr [a3]+1;                        rd S0;  rd S1;         ror; rmac;   wr.straight;    set.VRAptr  rSt, 2;
+    st.laddr [a3]+1;                        rd S0;  rd S1;         ror; rmac;   
+    st.laddr [a3]+1;                        rd S0;  rd S1;         ror; rmac;
+    st.laddr [a3]+1;                        rd S0;  rd S1;         ror; rmac;         
+    st.laddr [a3]+1;                        rd S0;  rd S1;         ror; rmac;    
+    st.laddr [a3]+1;                        rd S0;  rd S1;         ror; rmac;                   
+    st.laddr [a3]-7;                        rd S0;  rd S1;         ror; rmac;                                            
+                                            rd S0;  rd S1;         ror; rmac;
+                                            rd S0;  rd S1;         ror; rmac;   loop_begin; loop_end;
+    ld.laddr [a3]+1;                        rd S0;  rd S1;         ror; rmac;                   setB.loop a3, S127H, E127H;   // Loop: 112x127 times 127x1    // 4 loads to load y1x(65..127)
+    ld.laddr [a3]+1;                        rd S0;  rd S1;         ror; rmac;                   setB.loop 3;
+    ld.laddr [a3]+1;                        rd S0;  rd S1;         ror; rmac;
+S127H:ld [a6]+U2;       ld.normal R4;       rd S0;  rd S1;         ror; rmac;                   loop_begin; // re-load b1
+    ld.laddr [a3]+1;    ld.normal R5;       rd S0;  rd S1;         ror; rmac;
+                        ld.normal R6;       rd S0;  rd S1;         ror; rmac;   set.loop 56, 1;
+                        ld.qam R1;          rd S0;  rd S1;         ror; rmac;                   set.VRAptr  rS0, 4*_VR;
+                        ld.normal R7;       rd S0;  rd S1;         ror; rmac;
+                                            rd S0;  rd S1;         ror; rmac;   loop_begin; loop_end;
+    ld [a5] -U4;                            rd S0;  rd S1;         ror; rmac;
+    ld.laddr [a3]+1;                        rd S0;  rd S1;         ror; rmac;
+    ld [a5] +U6;                            rd S0;  rd S1;         ror; rmac;
+    ld.laddr [a3]+1;    ld.qam R1;          rd S0;  rd S1;         ror; rmac;                   
+    ld.laddr [a3]+1;    ld.normal R4;       rd S0;  rd S1;         ror; rmac;                   set.rot R0r1; // to not corrupt R1
+                        ld.qam R0;          rd S0;  rd S1;              rmac;                   set.VRAptr rS0, 4*_VR;  set.VRAptr rS1, 0*_VR;
+    ld.laddr [a3]-7;    ld.normal R5;       rd S0;  rd S1;  rd S2; ror; rmac;                   set.rot R0R1r1;
+                        ld.normal R6;       rd S0;  rd S1;         ror; rmac;
+                                            rd S0;  rd S1;         ror;     rmad;
+                        ld.normal R7;       rd S0;  rd S1;         ror; rmac;
+                                            rd S0;  rd S1;         ror; rmac;
+                                            rd S0;  rd S1;         ror; rmac;   wr.straight;    set.VRAptr  rSt, 2;
+    st.laddr [a2]+1;                        rd S0;  rd S1;         ror; rmac;   set.loop 49;
+    st.laddr [a2]+1;                        rd S0;  rd S1;         ror; rmac;
+                                            rd S0;  rd S1;         ror; rmac;   loop_begin; loop_end;
+    ld.laddr [a3]+1;                        rd S0;  rd S1;         ror; rmac;   
+    ld.laddr [a3]+1;                        rd S0;  rd S1;         ror; rmac;
+E127H:ld.laddr [a3]+1;                      rd S0;  rd S1;         ror; rmac;                   loop_end;
+    ld [a6]+U2;         ld.normal R4;       rd S0;  rd S1;         ror; rmac;
+    ld.laddr [a3]-3;    ld.normal R5;       rd S0;  rd S1;         ror; rmac;   // postdecr a3 to beginning of y1x sractch
+                        ld.normal R6;       rd S0;  rd S1;         ror; rmac;   set.loop 54, 1;
+                        ld.qam R1;          rd S0;  rd S1;         ror; rmac;                   set.VRAptr  rS0, 4*_VR; 
+  mv a5, _SSSDET_REF_D1;ld.normal R7;       rd S0;  rd S1;         ror; rmac;
+    add a6, a5, U8;                         rd S0;  rd S1;         ror; rmac;
+                                            rd S0;  rd S1;         ror; rmac;    
+                                            rd S0;  rd S1;         ror; rmac;   loop_begin; loop_end;
+                                            rd S0;  rd S1;         ror; rmac;
+                                            rd S0;  rd S1;         ror; rmac;                                               
+                                            rd S0;  rd S1;         ror; rmac;
+                                            rd S0;  rd S1;         ror; rmac;                   
+    add a5,U4;                              rd S0;  rd S1;         ror; rmac;   set.VRAincr rS1, _VRH;
+    ld [a4] + U4;                           rd S0;  rd S1;              rmac;   set.VRAptr  rS1,2*_VR;  
+    ld.laddr [a0]+1;                                                    rmac;   set.VRAptr  rS0,0*_VR;
+    ld.laddr [a0]+1;                                                    rmac;   set.VRAincr rS0,1*_VR;
+    ld.laddr [a0]+1;    ld.qam R2;                                               
+                        ld.h2l R0;                                              set.prec half, half_fixed, single,single,single;                             
+    ld [a4] + U4;       ld.l2h_h2l R0;                                                          set.VRAptr  rV, 6*_VR;    
+    ld.laddr [a0]+1;    ld.l2h R1;                                              wr.straight;    set.VRAptr  rSt, 6;     // write y2a_97..112 xxxx, where "xxxx" are invalid
+    ld.laddr [a0]-4;    ld.h2l R0;          rd S0;  rd S1;  rd S2;              set.Smode S0straight,S1r2c,S2zeros;                              
+ED0xHP:st.laddr [a2]+1; ld.qam R3;          rd S0;  rd S1;              rmad;                   set.VRAptr  rS0, 0*_VR; loop_end;
+    // Cycles can be saved by unrolling last iteration. Did not unroll it to reduce code size, simplify debugging and code maintainance. 
+    
+    //=== stage 2: find peak, thresholding ===//
+    /*
+        (2a) compute y2sq = abs(y2[1..336]).^2
+        (2b) peak search over y2sq[1..336]: peak denoted by "peak_val_sss"
+        (2c) compute rssi_sss = sum(abs(s[1..127]).^2)
+        (2d) compute adjusted_thresh = thresh_sss x rssi_sss x scaling, where scaling is to compensate scaling in ld.qam and summation in rssi_sss (scaling = 127 * (1/8)^4 = 0.0310058593750 = 0x3CFE0000 in SP).
+        (2e) compare peak_val_sss with adjusted_thresh
+    */
+    
+    // At this point, a0 is at s[1], 1st point of s1..127 (to compute rssi_sss)
+    
+    clr.g 0x10; // opS: clear g4 (mask: b0000 ... 0000 0001 0000 = 0x10) to later clear s[127] with mv.w
+    clr.VRA; 
+    set.VRArange1 rS2, 2*_VR, 2*_VR+_VRH;
+    set.loop 4, 2;    
+    ld.laddr [a2]-(336/16);              
+    ld.laddr [a2]+1;                        set.prec single, single, single, single, single;
+    ld.laddr [a2]+1;                        set.xtrm signed, max, all, value, SIZE_XTRM_ELEM;   clr R2;
+    ld.laddr [a2]+1;                        set.VRAincr rS2, _VRH;     // rS2 for xtrm search. DO NOT "rd S2" before peak search ends.
+    ld.laddr [a2]+1;    ld.normal R0;                       rd S2;              set.Smode S0straight,S1straight,S2zeros;
+    ld.laddr [a2]+1;    ld.normal R1;                                             
+    ld.laddr [a2]+1;    ld.normal R0;       rd S0; rd S1;                       set.VRAptr rV, 2*_VR;
+    ld.laddr [a2]+1;    ld.normal R1;                                           set.VRAptr rS2, 2*_VR;  
+    ld.laddr [a2]+1;    ld.normal R0;       rd S0; rd S1;               cmad;            
+    ld.laddr [a2]+1;    ld.normal R1;                                           
+    ld.laddr [a2]+1;    ld.normal R0;       rd S0; rd S1;               cmad;         
+    ld.laddr [a2]+1;    ld.normal R1;                                           set.creg 19,0;
+    ld.laddr [a2]+1;    ld.normal R0;       rd S0; rd S1;               cmad;   wr.hlinecplx;   xtrm a4,g2;     // a4=id1, g2=peak value        
+    ld.laddr [a2]+1;    ld.normal R1;                                                           loop_begin;
+    ld.laddr [a2]+1;    ld.normal R0;       rd S0; rd S1;               cmad;   wr.hlinecplx;   loop_end;      
+    ld.laddr [a2]+1;    ld.normal R1;                                           
+                        ld.normal R0;       rd S0; rd S1;               cmad;   wr.hlinecplx;   
+    ld.laddr [a0]+1;    ld.normal R1;
+    ld.laddr [a0]+1;    ld.normal R0;       rd S0; rd S1;               cmad;   wr.hlinecplx;   
+                                            rd S0; rd S1;                                       set.prec half, half, single, single, single; // s1..127 in cHP   
+    ld.laddr [a0]+1;    ld.h2l R0;                                      cmad;   wr.hlinecplx;   set.VRAincr rS1, _VRH;
+                        ld.l2h_h2l R0;                                  cmad;                   set.VRAincr rS0, _VRH;  set.Smode S0conj, S0hlinecplx, S1hlinecplx, S2zeros;         
+    ld.laddr [a0]+1;                        rd S0;  rd S1;                      wr.hlinecplx;   
+   mv a3, _sssdet_param;ld.h2l_l2h R0;      rd S0;  rd S1;                                      
+    ld.laddr [a0]+0;                        rd S0;  rd S1;              cmad;   wr.hlinecplx;     
+                        ld.l2h_h2l R0;      rd S0;  rd S1;              cmac;                   set.VRAptr rS0, 0;      set.VRAptr rS1, 0;                        
+                                            rd S0;  rd S1;              cmac;   wr.hlinecplx;   // computed 11*32 = 352 rSP. Last 16 rSP will not be searched for the peak.
+                        ld.l2h R1;          rd S0;  rd S1;              cmac;                   set.VRAptr rV, (2*_VR-2);
+                                            rd S0;  rd S1;              cmac;                   mv.w [rV], g4;  // set s[127]=0    
+                                            rd S0;  rd S1;              cmac;                   set.rot R0r8;      
+    ld [a3]+U2;                                                         cmac;                   set.VRAptr rS0, 0;                                      
+    ld [a3]+U2;                                                         cmac;                   set.Smode S0straight, S1i2i1r2r1, S2zeros;
+                                                                                                set.VRAincr rS1, 0;     set.prec single, single, single, single, single; 
+    mvB g5, a4;         ld.h2l R0;                                                              set.VRAptr rV, 0;     // peak search result available here 
+                        ld.h2l R0;          rd S0;                                              set.VRAptr rS1, 0;  
+                                                    rd S1;                                      wr.hlinecplx;   
+                                            rd S0;  rd S1;      ror;                            set.Smode S0real1, S1i2i1r2r1;     
+                                                    rd S1;      ror;            rmad;           // compute thre_sss * scaling     
+                                                    rd S1;      ror;    cmad;
+                                                    rd S1;      ror;    cmac;
+                                                    rd S1;      ror;    cmac;                   set.VRAptr rV, 2*_VR;     
+                                                    rd S1;      ror;    cmac;   wr.straight;    // write thre_sss * scaling in R2[0]      
+                                                    rd S1;      ror;    cmac;
+                                                    rd S1;              cmac;
+                                                                        cmac;                   clr.VRA;
+                                                                        cmac;                   set.Smode S1straight;
+                                                                                                set.VRAptr rS1, 2*_VR;
+                                                    rd S1;
+    mv a7, _ssdet_out;
+    add a7, (18*UPHW);                                                  maf;    wr.hlinecplx;   // write rssi_sss in R0[0] 
+    st.w [a7]+U2;   // store rssi_sss
+    stC [a7]+U2, g2;// store peak_val_sss
+                                                                                fnop;
+                                                                                wr.straight;    // write adjusted threshold
+    mv.w g4, [rS0]; // g4 = adjusted threshold // 2-cyc delay 
+    fnop; 
+    cmp g2, g4;     // g2 = peak of SGEMV result
+    fnop;
+    jmp.lt NO_SSS_HP;      
+    fnop;
+    mv g0, 0;
+YES_SSS_HP:    
+    mv g0, 1;
+    stC [a7]+U2, g5;// store id1 if SSS is detected   
+NO_SSS_HP:
+    rts;               
+    set.creg 19, 0;
+    fnop;
+_sssdet_hpgemv_v1_end:
+//====================== sssdet_hpgemv_v1 (ENDs) ========================//
+
+// vmult_conj_hfx_hfx(cfixed16_t* x1,cfixed16_t* x2,cfixed16_t* y,cfixed16_t* px_cbuff, uint32_t cbuff_size);
+// === pointwise complex conjugate multiplication of conj(x1)*x2 vectors === //
+    .global  _vmult_conj_hfx_hfx
+    .type    _vmult_conj_hfx_hfx, @function
+    .size _vmult_conj_hfx_hfx, _vmult_conj_hfx_hfx_end - _vmult_conj_hfx_hfx
+_vmult_conj_hfx_hfx:
+    // y = conl(x1) .* x2)
+    //a0: x1 vector aligned 
+    //a1: x2 vector aligned
+    //a2: y  vector aligned
+    //g0: #  no of lines in VRA (32 element) half fixed complex size
+    clr.VRA;
+    set.range a1, a3, g0;
+    set.loop 8, LSTE,LETE; 
+    set.VRAptr rS1, 2*_VR;
+    set.VRAptr rS0, 0*_VR;
+    set.VRAptr rV, 4*_VR;
+    set.VRAptr rSt, 4;
+    set.VRAincr rS1, _VRH;
+    set.VRAincr rS0, _VRH;
+    set.VRAincr rV,  _VRH;
+    set.VRArange1 rS1,2*_VR,7*_VRH;
+    set.VRArange1 rS0,0*_VR,3*_VRH;
+    set.VRArange1 rV,4*_VR,9*_VRH;
+    set.prec half_fixed, half_fixed, half_fixed, single, half_fixed;   
+LSTE:   ld.laddr [a0]+1;    /*clr.VRA;*/								loop_begin;
+		ld.laddr [a1]+1;
+		ld.laddr [a0]+1;                                                                          
+        ld.laddr [a1]+1;     ld.h2l R0;                                                                                                
+        ld.laddr [a0]+0;     ld.h2l R2;                            
+        ld.laddr [a1]+0;     ld.l2h_h2l R0;
+                             ld.l2h_h2l R2;	
+                             ld.l2h R1;				rd S0;  rd S1;  rd S2;      set.Smode S0conj, S0hlinecplx, S1hlinecplx, S2zeros; 
+                             ld.l2h R3;			  	rd S0;  rd S1;  rd S2;		
+                            			  			rd S0;  rd S1;  rd S2;					cmad;
+                            			  			rd S0;  rd S1;  rd S2;					cmad;	
+           																					cmad;
+           																					cmad;
+                          //  fnop;
+                          //  fnop;
+                          /*  fnop;*/         wr.hlinecplx;                                              
+                                              wr.hlinecplx; 
+                                              wr.hlinecplx;		 st.laddr [a2]+1;
+                                              wr.hlinecplx;                                                 
+LETE:         													 st.laddr [a2]+1;			loop_end;                                                                                                                                                           
+    rts;
+    mv a4, 0;
+    set.range a1, a4, 0;                                                                
+    fnop;
+    fnop;
+_vmult_conj_hfx_hfx_end:
+

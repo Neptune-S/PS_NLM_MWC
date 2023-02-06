@@ -1,0 +1,66 @@
+/*
+ * noise_est.sx
+ *  Created on: 
+ *      Author: varun.sharma
+ *
+ */
+ 	.global  _noise_estimation_asm
+    .type    _noise_estimation_asm, @function
+    .size _noise_estimation_asm, _noise_estimation_asm_end - _noise_estimation_asm
+_noise_estimation_asm:
+    clr.VRA;
+    set.prec half_fixed, half_fixed, half_fixed, single, single;
+    set.Smode S0zeros,S1real1,S2zeros;
+    rd S0;rd S1;rd S2;
+    fnop;
+    rmad;
+    set.Smode S0conj, S0hlinecplx, S1hlinecplx, S2zeros;  
+    set.VRAptr rS0,0;			set.VRAptr rS1,0;	   
+ 	set.VRAptr rSt, 3; 						
+ 	set.loop 2, LS,LE;	
+    set.rot R0r8;                  
+    LS: ld.laddr [a0]+1;   			loop_begin;
+    set.loop 2, L5,L6;       
+    fnop;
+    ld.normal R0;   			
+    L5:rd S0;rd S1;rd S2;			loop_begin;
+    ror;
+    ror; 							cmac;						
+    ror;   						
+    L6:ror; 					   	loop_end;	
+	LE:								loop_end;	
+	set.loop 2, L1,L2;		
+	set.VRAptr rV, 3*64;   			set.rot R0R1r8; 									
+	L1:ld.laddr [a1]+1;				loop_begin;
+	ld.laddr [a1]+0;
+	set.loop 2, L7,L8;							
+	ld.normal R0; 
+	ld.normal R1;
+	ror;				
+	ror; 
+	L7: rd S0;rd S1;			loop_begin;
+    ror;
+    ror;						cmac;						
+    ror;   						
+    L8:ror; 					loop_end; 
+	L2: 						loop_end;
+	wr.hlinecplx;					set.prec single, single, single, single, single;				      
+    set.Smode S0straight,S1real1,S2zeros;  
+    set.rot R3r4;				set.VRAptr rS0,3*64;			  
+    rd S0;rd S1;
+    set.loop 16, L3,L4;	
+    rmad;
+    L3: ror;						loop_begin;
+    rd S0;rd S1;	
+    fnop;
+    L4:		rmac;					loop_end;	
+    wr.straight; 	
+    rd S0;
+    fnop;
+    mv.w g0, [rS0];    							
+    fnop;   
+    st [a2], g0;									   		     
+    rts;
+    fnop;
+    fnop;                                                                          
+_noise_estimation_asm_end:

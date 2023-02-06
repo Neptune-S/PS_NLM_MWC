@@ -1,0 +1,1 @@
+cmd_librte_pmd_dpaa.a = /opt/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-ar crDs librte_pmd_dpaa.a fmlib/fm_lib.o fmlib/fm_vsp.o dpaa_ethdev.o dpaa_oldev.o dpaa_flow.o dpaa_rxtx.o dpaa_fmc.o 

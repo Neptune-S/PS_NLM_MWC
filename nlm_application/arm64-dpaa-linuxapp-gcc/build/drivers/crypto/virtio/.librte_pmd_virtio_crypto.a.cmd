@@ -1,0 +1,1 @@
+cmd_librte_pmd_virtio_crypto.a = /opt/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-ar crDs librte_pmd_virtio_crypto.a virtqueue.o virtio_pci.o virtio_rxtx.o virtio_cryptodev.o 

@@ -1,0 +1,216 @@
+//--------------------------------------------------------------------------
+// Copyright (c) 2019, NXP
+// NXP SEMICONDUCTOR CONFIDENTIAL PROPRIETARY
+//
+//--------------------------------------------------------------------------
+
+// =============================================================================
+//! @file           sssdet_targeted_asm.sx
+//! @brief          Assembly functions for 5GNR targeted SSS detector.
+//! @author         NXP Semiconductors.
+//! @copyright      Copyright (C) 2018 NXP Semiconductors.
+// =============================================================================
+
+//#include "vspa2_fw.h"
+ #define UPHW        1
+#if UPHW==4
+    #define LOG2UPHW 2
+#elif UPHW==2
+    #define LOG2UPHW 1
+#elif UPHW==1
+    #define LOG2UPHW 0
+#else
+    #error unsupported UPHW
+#endif
+
+// _VR  = # of halfwords of one  VRA register
+// _VRH = # of halfwords of half VRA register
+#define _VR     (__AU_COUNT__*4)
+#define _VRH    (__AU_COUNT__*2)
+ 
+
+#define U2  ( 2 * UPHW)
+#define U4  ( 4 * UPHW)
+#define U6  ( 6 * UPHW)
+#define U8  ( 8 * UPHW)     
+#define U24 (24 * UPHW)
+
+#define HFL64 (21504)
+
+// === === //
+    .global  _sssdet_targeted_hpgemv_v1
+    .type    _sssdet_targeted_hpgemv_v1, @function
+    .size _sssdet_targeted_hpgemv_v1, _sssdet_targeted_hpgemv_v1_end -_sssdet_targeted_hpgemv_v1
+_sssdet_targeted_hpgemv_v1:
+    // xcn = abs(y2).^2, . "xcn" means "xcorr normalized".
+    //a0: sss equalized
+    //a1: ptr to scratch buffer (256 HP)
+    //a2: store for sss sequence.
+    //a3: store and ptr for y1
+    //a4: D0 ptr 
+    //a5: D1 read ptr
+    //a6: D1 reload ptr
+    //a7: ssdet out ptr
+    //
+    //g0: id1
+    //g1: id2
+    //g2: id2 x (128x3bits) + (id1 mod 112)x128  = (id2 x 24)+((id1 mod 112)x8) halfwords
+    //
+    // example VRArange: 
+    //  R2[0]..R2[4]:   0x00840080  
+    //  R4..R7 wrap:    0x01C00100
+    //  R5..R7 wrap:    0x01C00140 
+    //
+    //VRA usage: see spreadsheet in "doc" folder
+    
+ 
+    // This function uses ld.qam to load D0 and D1 sequence of SSS (stored as bits in DMEM), into VRA (in half-fixed format) 
+    //  Use 4QAM mapping: bit0 <=> -0.125; bit1 <=> 0.125
+    //  Read Table 4-23 in ISM to understand how ld.qam works. Read "Section 14.5.1 VSPA Memory Map" in ISM to know how to set related IP registers.
+    //
+    // In IPreg 0x40 (word addr; ByteAddr=0x100, used in ISM "Load Register File Control register"): 
+    //      Mode = "2" for Mode=2 (4QAM). ByteAddr = 0x100.
+    //      BPSK,4QAM,16QAM only use Real0 (=IPreg 0x41) and Imag0(=IPreg0x41). 64qam and 256qam use Real0..7 and Imag0..7.
+    // In IPreg 0x41 (Real0)
+    //      8 of 4-bit are denoted by cp0..cp7. In each cp: "00"=1,"10"=-1 for 4QAM. ("01"=3 and "10"=-3, used for 16QAM) 
+    //      4QAM only uses CP3..CP0, each CP represented by 2-bit. "CP" means "coefficient pair".
+    //      [CP3 CP2 CP1 CP0] = 0x22 = 00_10_00_10b <=> {1,-1,  1,-1} as Four "modulation values" for real part    
+    // In IPreg 0x42 (Imag0) 
+    //      [CP3 CP2 CP1 CP0] = 0x0a = 00_00_10_10b <=> {1, 1, -1,-1} as Four "modulation values" for imag part
+    // Read from left to right, Real0,Imag0 form the complex symbol set (or "coefficient" set if using ISM terminology)
+    //                       {-1-1j     1-1j    -1+1j   1+1j}, corresponding to 
+    //            b1b0 pairs {00,       01,     10,     11}. This is WiFi's QPSK mapping: bit 0 mapped to -1; bit 1 to 1.
+    
+    //=== stage 1: compute D0 x D1 ===// 
+	mv g3, g0;
+	div g3, 112;    			// g3 = floor(id1/112). Range: {0,1,2}. 7-cycle delay.
+	mv g4, g0;	
+	mod g4, 112;    			// g4 = id1%112. Range: {0..111}. 
+    mpy g2, g1, (24 * UPHW);    // advance D0 ptr by ID2 x (128x3bits) = ID2 x 24halfwords.        	
+
+    // ld.qam (4QAM)    
+    mvip 0x40, 2;                 
+    mvip 0x41, 0xffffff22;        
+    mvip 0x42, 0xffffff0a;
+
+    mpy g5, g3, (8 * UPHW);     	// advance D0 ptr by ciel(ID1/112) x (128bits) = ciel(ID1/112) x 8 halfwords.     
+    mv a4, _SSSDET_REF_D0;    
+    mv a5, _SSSDET_REF_D1;
+	mv a3, 63;
+											//Address offset for D0
+	add g2, g2, g5;																			// Which is set of {b0a,b0b,b0c} to use depends on ID2 and select b0a or b0b or b0c based on ID1
+											//Load D1
+    ld [a5] + U4;                                                                           clr.VRA; //set.creg 255, 0; 
+    ld [a5] + U4;                                                                           set.prec half_fixed,half_fixed,half_fixed,single,half_fixed;                           
+	ld [a5] + U4;																			set.creg 19, 0;  
+	ld [a5] + 0;		ld.qam R0;															set.VRAincr rSt, 1;
+						ld.qam R1;															set.VRArange1 rSt, 0,3; 
+	ld [a4] + g2;		ld.qam R2;															set.VRAptr rSt, 0;				//Load D0
+	ld [a4] + U4;		ld.qam R3;															set.VRAptr  rS0, 0*_VR;																		 
+	ld [a4] + 0;																			set.VRAincr rS0, 1*_VR;		
+	st.laddr [a1]+1;   																		set.VRAptr rV, 2*_VR;			
+	st.laddr [a1]+1;	ld.qam R4;															set.VRAincr rV, 1*_VR; 
+	st.laddr [a1]+1;	ld.qam R5;															set.VRAptr  rS1, 4*_VR;
+	st.laddr [a1]-3;																		set.VRAincr rS1, 1*_VR; 
+	//Dummy load
+	ld [a1] + g4; 																			set.Smode S0straight,S1straight,S2zeros;		
+	ld.laddr [a1]+1;						//Load cyclic shifted D1 														
+	ld.laddr [a1]+1;																			
+	ld.laddr [a1]+0;  	
+						ld.h2l R0;
+						ld.l2h_h2l R0;
+						ld.l2h R1;
+											//D = D1 * D2. then set D[128]=0
+	mv g5, 0;					 		rd S0;  rd S1;  rd S2;									
+	ld.laddr [a0]+1;					rd S0;  rd S1;  rd S2;									
+	ld.laddr [a0]+1;											rmad;						set.VRAincr rS1, 1*_VRH;
+	ld.laddr [a0]+1;											rmad;  						set.Smode S0straight,S1r2c,S2zeros;
+						ld.h2l R6;															set.VRAptr  rS0, 6*_VR; 
+	ld.laddr [a0]+1;	ld.l2h_h2l R6;														set.VRAptr  rS1, 2*_VR; 
+	ld.laddr [a0]-4;	ld.l2h R7;										wr.straight;		set.prec half, half_fixed, half_fixed, single, half;
+						ld.h2l R6;		rd S0;  rd S1;  rd S2;			wr.straight;		set.VRAptr rV, 255;		
+	mv.h [rv], g5;		ld.l2h_h2l R6;	rd S0;  rd S1;			 							set.VRAptr rSt, 2;		// compute D * sEq.					 	
+	st.laddr [a2]+1;	ld.l2h R7;								rmad;						set.VRAptr  rS0, 6*_VR;
+	st.laddr [a2]+1;					rd S0;  rd S1;			rmac;						set.VRAptr rV, 0;
+										rd S0;  rd S1;																	
+														    	rmac;			 			set.VRAptr  rS0, 0*_VR;	
+									    						rmac;						set.VRAincr rS0, 0;	 		
+							    															set.Smode S0straight,S1real1,S2zeros;
+	fnop;							    																	
+	fnop;    											  										
+					    												wr.straight;			
+	set.Rot R0r2;						ror; rd S2; rd S1; rd S0;							set.VRAptr rV, 0*_VR;
+										ror; rd S0;						set.loop 28, 1; 
+										ror; rd S0;				rmad;						
+										ror; rd S0;				rmac;	loop_begin; loop_end;
+	//Energy of signal (rssi) computation									
+	ld.laddr [a0]+1;					ror; rd S0;				rmac;						
+	ld.laddr [a0]+1;					ror; rd S0;				rmac;						set.VRAincr rS1, _VRH;	
+	ld.laddr [a0]+0;					ror; rd S0;				rmac;						set.VRAincr rS0, _VRH; 
+						ld.h2l R6;															set.VRAptr  rS0, 6*_VR; set.VRAptr rS1, 6*_VR;
+						ld.l2h_h2l R6;														set.prec half, half, half_fixed, single, half; 
+	ld.laddr [a0]+1;	ld.l2h R7;		rd S0;  rd S1;  rd S2;  							set.Smode S0conj, S0hlinecplx, S1hlinecplx, S2zeros; 	
+	ld.laddr [a0]+1;					rd S0;  rd S1;					wr.straight;		//store (xcorr = D * sEq.)			
+	ld.laddr [a0]-4;					rd S0;  rd S1;			cmad;						
+						ld.h2l R6;		rd S0;  rd S1;			cmac;							
+						ld.l2h_h2l R6;							cmac;						set.VRAptr  rS0, 6*_VR; set.VRAptr rS1, 6*_VR;
+						ld.l2h R7;		rd S0;  rd S1;			cmac;						set.VRAptr rV, 510;
+	mv.w [rv], g5;						rd S0;  rd S1;
+										rd S0;  rd S1;			cmac;						set.VRAptr rV, 1*_VR;
+										rd S0;  rd S1;			cmac;
+																cmac;						set.VRAptr  rS0, 1*_VR;
+																cmac;						
+																							set.Smode S0straight,S1real1,S2zeros;
+	fnop;
+																							set.prec half, half, half_fixed, single, single; 			
+																		wr.hlinecplx;		set.VRAincr rS0, 0;
+	set.Rot R1r2;						ror; rd S0;  rd S1;  rd S2;							set.VRAptr rV, 1*_VR;
+										ror; rd S0;						set.loop 15, 1;
+										ror; rd S0;				rmad;
+										ror; rd S0;				rmac;	loop_begin; loop_end;
+	fnop;
+	fnop;		   //energy of signal (rssi) available here 
+																							set.Smode S0straight,S1straight,S2zeros;		
+																		wr.straight;		set.VRAptr rS0, 0*_VR; set.VRAptr rS1, 0*_VR; // rssi result
+										rd S0;  rd S1;  rd S2;								set.VRAptr rV, 0*_VR;						
+	fnop;
+																cmad;
+	mv a3, _sssdet_param;																	 
+	ld [a3]+U2;																				set.Smode S0straight,S1straight,S2zeros;
+	ld [a3]+U2;																				set.prec single, single, half_fixed, single, single;	 
+	set.Rot R2r2;														wr.straight;													// peak result
+					ld.h2l R2;																set.VRAptr rS0, 2*_VR; set.VRAptr rS1, 2*_VR;					
+					ld.h2l R2;			rd S0; ror;
+										rd S1; rd S2;										
+																							set.VRAptr rS1, 1*_VR;										
+																rmad;																	// sss threshold x scaling
+																							set.VRAptr rV, 2*_VR;
+										rd S1;
+	fnop;
+																maf;																	// adusted threshold
+	fnop;
+	fnop;
+																							set.VRAptr rS0, 0*_VR;
+																		wr.straight;
+	mv.w g2, [rS0];																			set.VRAptr rS0, 1*_VR;
+	mv.w g4, [rS0];
+	mv a7, _ssdet_out;															
+	add a7, (18*UPHW);																		set.VRAptr rS0, 2*_VR;
+	stC [a7]+U2, g4;   	// store rssi_sss
+    stC [a7]+U2, g2;	// store peak_val_sss																				
+																
+    mv.w g4, [rS0]; 	// g4 = adjusted threshold // 2-cyc delay 
+    fnop; 
+    cmp g2, g4;     	// g2 = peak of SGEMV result
+    fnop;
+    jmp.lt NO_SSS;      
+    mv g3, g0;
+    mv g0, 0;																
+YES_SSS:    
+    mv g0, 1;
+    stC [a7]+U2, g3; // store id1 if SSS is detected      
+NO_SSS:
+    rts;               
+    set.creg 19, 0;
+    fnop;
+_sssdet_targeted_hpgemv_v1_end:																																	

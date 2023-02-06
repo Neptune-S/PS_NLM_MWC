@@ -1,0 +1,365 @@
+//--------------------------------------------------------------------------
+// Copyright (c) 2019, NXP
+// NXP SEMICONDUCTOR CONFIDENTIAL PROPRIETARY
+//
+//--------------------------------------------------------------------------
+
+// =============================================================================
+//! @file           pssdet_xcorr_fft_asm.sx
+//! @brief          Assembly functions to support 5GNR PSS detector based on FFT-xcorr.
+//! @author         NXP Semiconductors.
+//! @copyright      Copyright (C) 2017-2018 NXP Semiconductors.
+// =============================================================================
+//#include "vspa.h"
+#define SIZEMAU					(1)	
+#define UPHW                    SIZEMAU
+// For bit-shifting to translate peak index of extrema search engine into DMEM pointer offset
+#if UPHW==4
+    #define LOG2UPHW 2
+#elif UPHW==2
+    #define LOG2UPHW 1
+#elif UPHW==1
+    #define LOG2UPHW 0
+#else
+    #error "unsupported UPHW"
+#endif
+
+// _VR  = # of halfwords of one  VRA register
+// _VRH = # of halfwords of half VRA register
+#define _VR     (__AU_COUNT__*4)
+#define _VRH    (__AU_COUNT__*2)
+
+#define U2  ( 2 * UPHW)
+#define U4  ( 4 * UPHW)
+#define U6  ( 6 * UPHW)
+#define U8  ( 8 * UPHW)     
+#define U32 (32 * UPHW)
+
+// sample offset applied on "ptrPssData_3072". At OFST30 = 8, this pointer points to pss30[ 8 ], where pss30[0..273] denotes PSS symbol.
+#define OFST30 (8)
+ 
+// === === //
+    .global  _csp_csp_chf_vmult_vecalgn_asm
+    .type    _csp_csp_chf_vmult_vecalgn_asm, @function
+    .size _csp_csp_chf_vmult_vecalgn_asm, _csp_csp_chf_vmult_vecalgn_asm_end -_csp_csp_chf_vmult_vecalgn_asm
+_csp_csp_chf_vmult_vecalgn_asm:
+    // y = x1 .* x2
+    //a0: YFreqSP: y    <= R4R5 <= V
+    //a1: XFreqSP: x1   => R2R3 => S1
+    //a2: Hhf: x2       => R0 => S0
+    //g0: # of output DMEM lines (expect 32 since 32 DMEM lines in 16AU contain 512 cSP)
+    sr g0,g0,1; // each iteration stores 2 DMEM lines.            
+    ld.laddr [a2]+1;    clr.VRA;
+    ld.laddr [a1]+1;                                                set.prec half_fixed, single, single, single, single;
+    ld.laddr [a1]+1;                    set.VRAincr rS1, _VR;
+                        ld.normal R0;   set.VRAincr rV,  _VR;       set.VRAptr rS1, 2*_VR; // avoid using set.VRArange due to lack of opC spaces
+                        ld.normal R2;   set.VRAincr rSt, 1;         set.VRAincr rS0, _VRH;
+    ld.laddr [a2]+1;    ld.normal R3;   rd S0;  rd S1;  rd S2;      set.Smode S0hlinecplx, S1hlinecplx, S2zeros;
+    ld.laddr [a1]+1;                    rd S0;  rd S1;              
+    ld.laddr [a1]+1;                                                cmad;   
+                        ld.normal R0;                               cmad;   set.VRAptr rS0, 0;                      setB.loop g0, LS, LE;
+                        ld.normal R2;                                       set.VRAptr rS1, 2*_VR;
+LS: ld.laddr [a2]+1;    ld.normal R3;   rd S0;  rd S1;                                      set.VRAptr rV,  4*_VR;  loop_begin;
+    ld.laddr [a1]+1;                    rd S0;  rd S1;                      wr.hlinecplx;   set.VRAptr rSt, 4;
+    ld.laddr [a1]+1;                                                cmad;   wr.hlinecplx;   
+    st.laddr [a0]+1;    ld.normal R0;                               cmad;                   set.VRAptr rS0, 0;
+LE: st.laddr [a0]+1;    ld.normal R2;                                                       set.VRAptr rS1, 2*_VR;  loop_end;  
+    rts;
+    fnop;
+    fnop;
+_csp_csp_chf_vmult_vecalgn_asm_end:
+
+
+// === pointwise multiplication of two vectors === //
+    .global  _csp_csp_chf_vmult_asm
+    .type    _csp_csp_chf_vmult_asm, @function
+    .size _csp_csp_chf_vmult_asm, _csp_csp_chf_vmult_asm_end -_csp_csp_chf_vmult_asm
+_csp_csp_chf_vmult_asm:
+    // y = x1 .* x2
+    //a0: YFreqSP: y    <= R4R5 <= V
+    //a1: XFreqSP: x1   => R2R3 => S1
+    //a2: Hhf: x2       => R0 => S0    (x2 is non-vector-aligned)
+    //g0: # of output DMEM lines (expect 32 since 32 DMEM lines in 16AU contain 512 cSP)
+    sr g0,g0,1; // each iteration stores 2 DMEM lines.         
+    ld.laddr [a2]+1;                                                clr.VRA;
+    ld.laddr [a2]+0;                                                set.prec half_fixed, single, single, single, single;
+    ld.laddr [a1]+1;                                                set.VRAincr rS0, _VRH;
+    ld.laddr [a1]+1;    ld.h2l R0;                                  set.VRAincr rS1, _VR;
+                        ld.l2h R0;                                  set.VRAincr rV,  _VR;   set.VRAptr rS1, 2*_VR;  // avoid using set.VRArange due to lack of opC spaces
+                        ld.normal R2;                               set.VRAincr rSt, 1;       
+    ld.laddr [a2]+1;    ld.normal R3;   rd S0;  rd S1;  rd S2;      set.Smode S0hlinecplx, S1hlinecplx, S2zeros;
+    ld.laddr [a2]+0;                    rd S0;  rd S1;                      set.VRAptr rV,  4*_VR;
+    ld.laddr [a1]+1;                                                cmad;
+    ld.laddr [a1]+1;    ld.h2l R0;                                  cmad;   
+                        ld.l2h R0;                                          set.VRAptr rS0, 0;                      setB.loop g0, LS2, LE2;
+                        ld.normal R2;                                       set.VRAptr rS1, 2*_VR;
+LS2:ld.laddr [a2]+1;    ld.normal R3;   rd S0;  rd S1;                      wr.hlinecplx;                           loop_begin;
+    ld.laddr [a2]+0;                    rd S0;  rd S1;                      wr.hlinecplx;     
+    ld.laddr [a1]+1;                                                cmad;                   set.VRAptr rSt, 4;
+    ld.laddr [a1]+1;    ld.h2l R0;                                  cmad;                   set.VRAptr rV,  4*_VR;
+    st.laddr [a0]+1;    ld.l2h R0;                                                          set.VRAptr rS0, 0;
+LE2:st.laddr [a0]+1;    ld.normal R2;                                                       set.VRAptr rS1, 2*_VR;  loop_end;  
+    rts;
+    fnop;
+    fnop;
+_csp_csp_chf_vmult_asm_end:
+
+// === pointwise multiplication of two vectors === //
+    .global  _chf_chf_chf_vmult_vecalgn_asm
+    .type    _chf_chf_chf_vmult_vecalgn_asm, @function
+    .size _chf_chf_chf_vmult_vecalgn_asm, _chf_chf_chf_vmult_vecalgn_asm_end -_chf_chf_chf_vmult_vecalgn_asm
+_chf_chf_chf_vmult_vecalgn_asm:
+    // y = x1 .* x2
+    //a0: YFhf:  y  <= R4 <= V
+    //a1: XFhf: x1  => R2 => S1
+    //a2: Hhf:  x2  => R0 => S0
+    //g0: # of output DMEM lines (expect 32 since 32 DMEM lines in 16AU contain 512 cSP)
+    clr.VRA;            
+    ld.laddr [a2]+1;                                                set.prec half_fixed, half_fixed, half_fixed, single, half_fixed;
+    ld.laddr [a1]+1;                                                set.VRAptr rS1, 2*_VR;
+                                                                    set.VRArange1 rS0, 0, _VRH;
+    ld.laddr [a2]+1;    ld.normal R0;                               set.VRAincr rS1, _VRH;
+    ld.laddr [a1]+1;    ld.normal R2;                               set.VRAincr rS0, _VRH;
+                                        rd S0;  rd S1;  rd S2;      set.Smode S0hlinecplx, S1hlinecplx, S2zeros;
+    ld.laddr [a2]+1;    ld.normal R0;   rd S0;  rd S1;                                      set.VRAptr rS1, 2*_VR;                    
+    ld.laddr [a1]+1;    ld.normal R2;                               cmad;                                           setB.loop g0, LS3, LE3;
+                                        rd S0;  rd S1;              cmad;                   set.VRAincr rV,  _VRH;
+    ld.laddr [a2]+1;    ld.normal R0;   rd S0;  rd S1;                                      set.VRAptr rS1, 2*_VR;
+    ld.laddr [a1]+1;    ld.normal R2;                               cmad;                   set.VRAptr rV,  4*_VR;  
+                                        rd S0;  rd S1;              cmad;   wr.hlinecplx;   set.VRAptr rSt, 4;
+LS3:ld.laddr [a2]+1;    ld.normal R0;   rd S0;  rd S1;                      wr.hlinecplx;   set.VRAptr rS1, 2*_VR;  loop_begin;
+    ld.laddr [a1]+1;    ld.normal R2;                               cmad;                   set.VRAptr rV, 4*_VR;
+LE3:st.laddr [a0]+1;                    rd S0;  rd S1;              cmad;   wr.hlinecplx;                           loop_end;  
+    rts;                                                                 
+    fnop;
+    fnop;
+_chf_chf_chf_vmult_vecalgn_asm_end:
+
+// === masking one vector with another vector against a threshold === //
+    .global  _rsp_rsp_vmask_vecalgn_asm
+    .type    _rsp_rsp_vmask_vecalgn_asm, @function
+    .size _rsp_rsp_vmask_vecalgn_asm, _rsp_rsp_vmask_vecalgn_asm_end -_rsp_rsp_vmask_vecalgn_asm
+_rsp_rsp_vmask_vecalgn_asm:
+    // Compute y = x1 .* [ xm > thre_xm ]
+    //a0: y:   R1,3,5,7
+    //a1: x1:  R1,3,5,7
+    //a2: xm:  R1
+    //    mask R1,3,5,7
+    //g0: thre_xm in rSP => R0[0,1]    
+    //g1: # of output DMEM lines (expect 12 for 384x1 vector on 16AU)
+    //    nIter = (g1/4)-1 because each iteration stores 4 DMEM lines.
+    
+    // creg 3 controls AU output. 
+    // creg 3 = 2: AUout=>VRA in binary: non-negative => 1, negative => 0 (2-cycle delay. Read Section 4.5.1 Control register latency in ISM.)
+    // creg 3 = 0: normal output
+        
+    sr g1,g1,2;
+    clr.VRA;           
+    set.VRAincr 4*_VR, 4*_VR, 0, 4*_VR, 4;
+    ld.laddr [a2]+1;    set.prec single, single, single, single, single;        
+    ld.laddr [a2]+1;    mv.w [rV],g0;
+    ld.laddr [a2]+1;                                                                                                    
+    ld.laddr [a2]+1;    ld.normal R4;                                                       set.VRAptr  rS2, 4*_VR;    
+    ld.laddr [a1]+1;    ld.normal R4;   rd S0;  rd S1;  rd S2;                              set.Smode S0chs,S0hword, S1real1, S2straight; 
+    ld.laddr [a1]+1;    ld.normal R4;                   rd S2;                              set.VRAptr  rSt, 1;
+                        ld.normal R4;                   rd S2;      rmad;                   set.VRAptr  rV, 1*_VR;
+                        ld.normal R2;                   rd S2;      rmad;                   setB.loop g1, VMS, VME;                            
+                        ld.normal R6;                               rmad;                   set.creg 3, 2; 
+    ld.laddr [a1]+1;                                                rmad;                   set.VRAptr  rS1, 2*_VR;   
+    ld.laddr [a1]+1;                                                        wr.straight;    set.VRAptr  rS0, 1*_VR;                    
+                                        rd S0;  rd S1;  rd S2;              wr.straight;    set.Smode S0straight, S1straight, S2zeros;        
+VMS:ld.laddr [a2]+1;    ld.normal R2;   rd S0;  rd S1;                      wr.straight;    loop_begin;   
+    ld.laddr [a2]+1;    ld.normal R6;   rd S0;  rd S1;              rmad;   wr.straight;    set.creg 3, 0;
+    ld.laddr [a2]+1;                    rd S0;  rd S1;              rmad;                   set.VRAptr  rS0, 0;
+    ld.laddr [a2]+1;    ld.normal R4;                               rmad;                   
+    ld.laddr [a1]+1;    ld.normal R4;   rd S0;  rd S1;  rd S2;      rmad;                   set.Smode S0chs,S0hword, S1real1, S2straight; 
+    ld.laddr [a1]+1;    ld.normal R4;                   rd S2;              wr.straight; 
+    st.laddr [a0]+1;    ld.normal R4;                   rd S2;      rmad;   wr.straight;    set.VRAptr  rS1, 2*_VR;
+    st.laddr [a0]+1;    ld.normal R2;                   rd S2;      rmad;   wr.straight;    set.VRAptr  rS0, 1*_VR;
+    st.laddr [a0]+1;    ld.normal R6;                               rmad;   wr.straight;    set.creg 3, 2; 
+    ld.laddr [a1]+1;                                                rmad;                   
+    ld.laddr [a1]+1;                                                        wr.straight;      
+VME:st.laddr [a0]+1;                    rd S0;  rd S1;  rd S2;              wr.straight;    set.Smode S0straight, S1straight, S2zeros;  loop_end;
+    rts;                                                            
+    set.creg 3, 0;  // AUout=>VRA in normal output mode             
+    fnop;                                                           
+_rsp_rsp_vmask_vecalgn_asm_end:
+
+//====================== xcn_hfix ========================//
+    .global  _xcn_hf_asm_modified
+    .type    _xcn_hf_asm_modified, @function
+    .size _xcn_hf_asm_modified, _xcn_hf_asm_modified_end -_xcn_hf_asm_modified
+_xcn_hf_asm_modified:
+    // xcn = FIR[x^2] .* pwr_x_rcp. "xcn" means "xcorr normalized".
+    //a0: xcn store ptr 
+    //a1: x (in cHFix)    
+    //a2: Peak Value;
+    //a3: Peak Value Index; 
+    // xtrm takes the Number of HALF-word elements regardless of S2 precision
+    #define SIZE_XTRM_ELE ( (256)*2 )
+    clr.VRA;
+    set.loop 22, 1;
+    set.prec half_fixed, half_fixed, single, single, single;                                                                                    
+    set.VRAptr rS0, 0*_VR; 
+    mv a6, a0;
+    set.Smode S0straight, S1straight, S2zeros;                                                                                 
+    ld.laddr [a1]+1;                    set.VRAptr rSt, 3;                                                       
+    ld.laddr [a1]+1;                    set.VRAptr rS1, 0*_VR; 
+    ld.laddr [a1]+1;                                                
+    ld.laddr [a1]+1;                    ld.normal R0;                                                          
+    ld.laddr [a1]+1;                    ld.normal R0;   rd S0;  rd S1;  rd S2;                                                                  
+    ld.laddr [a1]+1;                    ld.normal R0;   rd S0;  rd S1;                                 
+    ld.laddr [a1]+1;                    ld.normal R0;   rd S0;  rd S1;              cmad;       set.VRAptr rV, 3*_VR;                                                              
+    ld.laddr [a1]+0;                    ld.normal R0;   rd S0;  rd S1;              cmad;         
+                                        ld.normal R0;   rd S0;  rd S1;              cmad;              
+                                        ld.normal R0;   rd S0;  rd S1;              cmad;       
+                                        ld.normal R0;   rd S0;  rd S1;              cmad;       wr.hlinecplx;               
+    st.laddr [a0]+1;                                    rd S0;  rd S1;              cmad;       wr.hlinecplx;  
+    st.laddr [a0]+1;                                                                cmad;       wr.hlinecplx;  
+    st.laddr [a0]+1;                                                                cmad;       wr.hlinecplx;  
+    st.laddr [a0]+1;                                                                            wr.hlinecplx;  
+    st.laddr [a0]+1;                     set.prec single, single, single, single, single;       wr.hlinecplx;
+    st.laddr [a0]+1;                                                                            wr.hlinecplx;
+    st.laddr [a0]+1;                                                                            wr.hlinecplx;
+    st.laddr [a0]+0;                                                                            set.VRAptr rS2, 0*_VR;
+                                        set.xtrm signed, max, all, value, SIZE_XTRM_ELE;        set.VRAincr rS2, _VRH;
+    ld.laddr [a6]+1;
+    ld.laddr [a6]+1;
+    ld.laddr [a6]+1;                     
+    ld.laddr [a6]+1;                    ld.normal R0;     
+    ld.laddr [a6]+1;                    ld.normal R1;  
+    ld.laddr [a6]+1;                    ld.normal R2;  
+    ld.laddr [a6]+1;                    ld.normal R3;
+    ld.laddr [a6]+0;                    ld.normal R4;
+                                            ld.normal R5;
+                                            ld.normal R6;
+                                        ld.normal R7;
+                                        fnop;
+                                        xtrm a7,g2; 
+                                        fnop; loop_begin;loop_end;
+    st [a2], g2;    rts;
+    mvB g2, a7;
+    st [a3], g2;                                                                       
+_xcn_hf_asm_modified_end:
+
+/*
+// === decim 2x with pre-adder === //
+    .global  _decim2x_padd_asm
+    .type    _decim2x_padd_asm, @function
+    .size _decim2x_padd_asm, _decim2x_padd_asm_end -_decim2x_padd_asm
+_decim2x_padd_asm:
+    #define LENGTH_DECIM2X (32)
+    //a0: x1536
+    //a1: x3072
+    // CbuffStart------32samp--------------------------CbuffStart+size
+    //a2: x3072 cir buffer starting
+    //g0: x3072 cir buffer size
+    //g1: number of output lines
+    set.range a1, a2, g0;
+    mv a3, _pssdet_decim2x_coeff;
+  	add a1, ( (- LENGTH_DECIM2X + 2) *UPHW );
+                               ld.laddr [a3]+1; 
+    clr.VRA;                   ld.laddr [a3]+0;
+    setB.creg 255, 8;          ld.laddr [a1]+1;
+    setB.creg 13, 0;           ld.laddr [a1]-2;    ld.h2l R7;
+                               ld.laddr [a1]+3;    ld.l2h R7;            set.prec half_fixed, half_fixed, half_fixed, padd, half_fixed;
+                               ld.laddr [a1]-1;    ld.h2l_l2h R0; ldB R4;
+                                                   ld.l2h_h2l R0; ldB R4;
+    set.Rot R4R5l4, R0R1r4;                        ld.h2l R5;
+    setA.VRAptr rS2, 4*_VR;                        ld.l2h R1;                    rol;                           set.Smode S0i1r1i1r1, S1i2i1r2r1, S2i1i2r1r2;
+    set.VRAincr rS0, 2;   setA.VRAptr rS0, 7*_VR;                           ror; rol; rd S2; rd S1;
+                                                                            ror; rol; rd S2; rd S1; rd S0;      set.loop g1, DS1, DE1;
+    setB.VRAptr rSt, 6;                                                     ror; rol; rd S2; rd S1; rd S0;    padd; clr.au;                                                                                                                                   
+                                                                            ror; rol; rd S2; rd S1; rd S0;    padd; cmac.sau;                                                                            
+                               ldA.laddr [a1]+1;                            ror; rol; rd S2; rd S1; rd S0;    padd; cmac.sau;
+DS1:                           ldA.laddr [a1]-2;                            ror; rol; rd S2; rd S1; rd S0;    padd; cmac.sau;               loop_begin;
+                               ldA.laddr [a1]+3;                            ror; rol; rd S2; rd S1; rd S0;    padd; cmac.sau;
+                               ldA.laddr [a1]-1;   ld.h2l_l2h R0; ldB R4;             rd S2; rd S1; rd S0;    padd; cmac.sau;
+                                                   ld.l2h_h2l R0; ldB R4;                           rd S0;    padd; cmac.sau;
+    setB.VRAptr rS0, 7*_VR;                        ld.h2l R5;                                                 padd; cmac.sau;
+                                                   ld.l2h R1;                    rol;                               cmac.sau;
+                                                                            ror; rol; rd S2; rd S1;
+                                                                            ror; rol; rd S2; rd S1; rd S0; 
+    setB.VRAptr rV, 6*_VR;                                                  ror; rol; rd S2; rd S1; rd S0;    padd; clr.au;
+                                                                            ror; rol; rd S2; rd S1; rd S0;    padd; cmac.sau;   wr.hlinecplx;
+                               ldA.laddr [a1]+1;                            ror; rol; rd S2; rd S1; rd S0;    padd; cmac.sau;
+                               ldA.laddr [a1]-2;                            ror; rol; rd S2; rd S1; rd S0;    padd; cmac.sau;
+                               ldA.laddr [a1]+3;                            ror; rol; rd S2; rd S1; rd S0;    padd; cmac.sau;
+                               ldA.laddr [a1]-1;   ld.h2l_l2h R0; ldB R4;             rd S2; rd S1; rd S0;    padd; cmac.sau;
+                                                   ld.l2h_h2l R0; ldB R4;                           rd S0;    padd; cmac.sau;
+    setB.VRAptr rS0, 7*_VR;                        ld.h2l R5;                                                 padd; cmac.sau;
+    mv a3, _PSSDET_X15;                            ld.l2h R1;                    rol;                               cmac.sau;
+    mv g2, ((512+32)*2*UPHW);                                               ror; rol; rd S2; rd S1;
+    set.range a0, a3, g2;                                                   ror; rol; rd S2; rd S1; rd S0; 
+    setB.VRAptr rV, 6*_VR + _VRH;                                           ror; rol; rd S2; rd S1; rd S0;    padd; clr.au;
+                               ldA.laddr [a1]+1;                            ror; rol; rd S2; rd S1; rd S0;    padd; cmac.sau;   wr.hlinecplx;
+DE1:stA.laddr [a0]+1;                                                       ror; rol; rd S2; rd S1; rd S0;    padd; cmac.sau;                 loop_end;    
+    rts; mv g0, 0;
+    set.range a1, g0, 0;
+    set.range a0, g0, 0;
+_decim2x_padd_asm_end:
+*/
+
+// === MLM 1.1 decim 2x with pre-adder === //
+    .global  _decim2x_padd_asm
+    .type    _decim2x_padd_asm, @function
+    .size _decim2x_padd_asm, _decim2x_padd_asm_end -_decim2x_padd_asm
+_decim2x_padd_asm:
+    #define LENGTH_DECIM2X (8)
+    //a0: output buffer
+    //a1: input buffer
+    //a2: inp circ buffer starting
+    //a3: output circ buffer starting point
+    //a4: filter coeffs
+    //a5: load input
+    //a6: store output
+    //g0: in cir buffer size
+    //g1: number of output lines
+    //g2: output circ buffer size
+    
+    //set.range a1, a2, g0;
+    mv a7, a1;
+    mv a6, a0;
+    set.range a1, a2, g0;		
+    add.laddr a1, -1;//add a1, ( (- LENGTH_DECIM2X + 2) *UPHW );
+    ld.laddr [a1]+2;						clr.VRA; 
+    mv a5, _pssdet_decim2x_coeff;			
+    set.loop g1, DS1, DE1;								   
+    set.range a0, a3, g2; 						ld.normal R2;
+    add a1, ( (- LENGTH_DECIM2X + 2) *UPHW );
+                     		   ld.laddr [a5]+0;		set.VRAptr rSt, 2;		 
+    setB.creg 255, 8;          ld.laddr [a4]+0;
+    setB.creg 13, 0;           ld.laddr [a1]-2;    
+                               ld.laddr [a1]+2;    ld.h2l R7;            					set.prec half_fixed, half_fixed, half_fixed, padd, half_fixed;	
+          					   					   ld.h2l_l2h R0; ldB R4;			
+                                                   ld.l2h_h2l R0; ldB R4;							
+    st.laddr [a4]+0;                        	   											set.Rot R4R5l4, R0R1r4;
+    setA.VRAptr rS2, 4*_VR;                                             		  rol;                     set.Smode S0i1r1i1r1, S1i2i1r2r1,S2i1i2r1r2; //S2zeros
+    set.VRAincr rS0, 2;   setA.VRAptr rS0, 7*_VR;                            ror; rol; rd S2; rd S1;
+ DS1:                          ldA.laddr [a1]+1;                                      rd S2; rd S1; rd S0;      					loop_begin;  
+	 setB.VRAptr rSt, 6;       ldA.laddr [a1]-2;                                             		 rd S0;    padd; clr.au;       		                                                                                                                          
+           					   ldA.laddr [a1]+2;                                                			   padd; cmac.sau;                                                                            
+                               					   ld.h2l_l2h R0; ldB R4;             							     cmac.sau;
+                                                   ld.l2h_h2l R0; ldB R4;                      
+     setB.VRAptr rS0, 7*_VR;                       ld.h2l R5;                                               
+     setB.VRAptr rV, 6*_VR;                                            			 rol;                             
+                                                       						ror; rol; rd S2; rd S1;					wr.hlinecplx;
+                                                           							  rd S2; rd S1; rd S0; 			clr.au;	
+          				        ldA.laddr [a1]+1;                                                   rd S0;     padd; 			
+                                ldA.laddr [a1]-2;                                                			   padd; cmac.sau;   
+    setB.VRAptr rS0, 7*_VR;     ldA.laddr [a1]+2;        															 cmac.sau;                                                    
+         						   ld.h2l_l2h R0; ldB R4;   				              
+                            					   ld.l2h_h2l R0; ldB R4;                          					
+    setB.VRAptr rV, 6*_VR + _VRH;                  ld.h2l R5;                                    					
+                                                                        		  rol;                          	wr.hlinecplx;
+ DE1:stA.laddr [a0]+1;   													 ror; rol; rd S2; rd S1;								loop_end;
+    mv g0, 0;  
+    set.range a1, g0, 0;
+    set.range a0, g0, 0;
+    rts; 
+    mv a1, a7;
+    mv a0, a6;
+    
+_decim2x_padd_asm_end:
+
+

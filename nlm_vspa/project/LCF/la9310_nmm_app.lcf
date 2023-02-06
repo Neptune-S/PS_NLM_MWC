@@ -1,0 +1,161 @@
+/**
+ * @file        la9310_nmm_app.lcf
+ * @brief       LA9310 linker configuration file for NLM application.
+ * @copyright   Copyright 2021 NXP
+ */
+/*  NXP Confidential. This software is owned or controlled by NXP and may only be used strictly
+ *  in accordance with the applicable license terms. By expressly accepting
+ *  such terms or by downloading, installing, activating and/or otherwise using
+ *  the software, you are agreeing that you have read, and that you agree to
+ *  comply with and are bound by, such license terms. If you do not agree to
+ *  be bound by the applicable license terms, then you may not retain,
+ *  install, activate or otherwise use the software.
+ */
+// -----------------------------------------------------------------------------
+// Memory sizes in bytes:
+// -----------------------------------------------------------------------------
+
+SIZE_PRAM_VCPU = (32*1024);
+SIZE_PRAM_IPPU = (2*1024);
+
+SIZE_DRAM_VCPU = (20*1024);
+SIZE_DRAM_IPPU = (12*1024);
+SIZE_DRAM_VSPA = SIZE_DRAM_VCPU+SIZE_DRAM_IPPU;
+
+ORIGIN_DTCM    = (0x20000000);
+SIZE_DTCM      = (64*1024);
+SIZE_ITCM	   = (128*1024);
+SIZE_HOST      = (1024*1024*1024);
+SIZE_SRAM_VSPA = (4*1024*1024); 
+
+VCPU_OFFSET = 0x0000;
+
+HOSTS_SCRATCH_MEMORY = 0xA0419140;
+//OVERLAY_START_ADDR = HOSTS_SCRATCH_MEMORY+0x1000; // DDR host
+OVERLAY_START_ADDR	 = 0x20003100; // FreeRTOS's DTCM
+HOST_MEM_OFFSET      = 0x1E00;
+OVERLAY_SIZE         = 0x1E00;  
+
+VPRAM_SIZE = SIZE_PRAM_VCPU - OVERLAY_SIZE;
+
+arch(vspa2);
+entry("_start");
+number_of_cores(1);
+
+memory_space (*)
+{
+    0 ("rx"):   vprog,  org = 0x00000000, len = SIZE_PRAM_VCPU;
+    1 ("rw"):   vdata,  org = VCPU_OFFSET, len = SIZE_DRAM_VSPA+VCPU_OFFSET;  // TKT331844.
+    2 ("rx"):   iprog,  org = 0x00000000, len = SIZE_PRAM_IPPU;
+    3 ("rw"):	vsparam,  org = 0x20400000, len = SIZE_SRAM_VSPA
+    4 ("rwx"):  edata,  org = 0x00000000, len = 0xFFFFFFFF;     // Maximum allocatable space.
+}
+
+unit private (*) {
+    // -------------------------------------------------------------------------
+    // Memory regions:
+    // -------------------------------------------------------------------------
+    MEMORY
+    {
+        .vpram          ("rx")  0: org = 0x00000000,    len = VPRAM_SIZE;
+        .vpram_overlay  ("rwx")  0: AFTER(.vpram),       len = OVERLAY_SIZE;
+
+        
+        .vdram          ("rw")  1: org = VCPU_OFFSET, len = SIZE_DRAM_VCPU;
+        .idram           ("rw") 1: org = SIZE_DRAM_VCPU, len = SIZE_DRAM_IPPU;
+ 
+        .ipram          ("rx")  2: org = 0x00000000;
+
+   
+        host            ("rwx") 4: org = 0xA0000000, len = SIZE_HOST;   // PCIe address space.
+		ccsr			("rw")  4: org = 0x40000000, len = 0x10000000;    // CCSR i.e. registers.
+	
+		
+		.first          	("rx")  4 : org = OVERLAY_START_ADDR,		len = HOST_MEM_OFFSET;
+        .second		    	("rx")  4 : AFTER(.first),	   				len = HOST_MEM_OFFSET;
+    }
+
+    // -------------------------------------------------------------------------
+    // Image sections:
+    // -------------------------------------------------------------------------
+    SECTIONS
+    {
+    	.first {
+        	.=align(16);
+            .text.ssb
+            .=align(16);
+        } > .first;
+        
+        .second {
+        	.=align(16);
+            .text.cf
+            .=align(16);
+        } > .second;
+	
+	OVERLAY .vpram_overlay {
+            PRELOAD (.first;)
+            .second;
+        } > .vpram_overlay;
+        
+        .vpram {
+            ___pram_start = .;
+            ".init"
+            ".text"
+            unmatch_pgm("*");
+            ___pram_limit = .;
+        } > .vpram;
+
+     .idram {
+     	    
+     		.idramvar
+            ___data_start = .;
+            
+       		".data.*"
+            ".data"
+            
+            unmatch_data("*");
+            ".bsstab"
+            ___data_limit = .;
+
+            __bss_start = .;
+            ".bss.rx.ippu"
+            ".bss.*"
+            ".bss"
+            ".vbss"
+            unmatch_bss("*");
+            __bss_limit = .;
+            __bss_end = .;
+
+            . = align(n_au()*2*4);
+            ___stack_start = .;
+            __stack = .;
+            __heap = .;
+            ___stack = .;
+            ___stack_limit = vmorg(".idram") + SIZE_DRAM_IPPU - 512;
+
+		} > .idram
+        
+        
+        .vdram {
+        	.scratchbuff
+        	.large_buffer
+        	.scratch
+        	
+        	".rodata.fft" 
+			".rom.*"
+            ".rodata.*"
+            ".rom"
+            
+        } > .vdram
+
+        .ipram {
+            ".itext"
+        } > .ipram;
+
+    }
+}
+
+___pram_size = ___pram_limit - ___pram_start;
+___data_size = ___data_limit - ___data_start;
+__bss_size = __bss_limit - __bss_start;
+___stack_size = ___stack_limit - ___stack_start;

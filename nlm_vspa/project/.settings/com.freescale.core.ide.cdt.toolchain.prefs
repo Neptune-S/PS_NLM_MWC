@@ -1,0 +1,11 @@
+#Wed Jun 27 13:16:10 EEST 2018
+eclipse.preferences.version=1
+hotfix/class\ com.freescale.core.ide.cdt.toolchain.ProjectErrorParserHotFix=true
+hotfix/class\ com.freescale.core.ide.cdt.toolchain.QuotePathsHotFix=true
+hotfix/class\ com.freescale.core.ide.cdt.toolchain.ToolOptionsUpdateHotFix=true
+hotfix/class\ com.freescale.core.ide.cdt.toolchain.UiElementValueTypeHotFix=true
+hotfix/com.freescale.core.ide.util.pbhotfix=true
+hotfix/com.freescale.vspa.cdt.toolchain=true
+hotfix/com.freescale.vspa.cdt.toolchain.FixCommandLinePatternHotFix=true
+hotfix/com.freescale.vspa3.cdt.toolchain=true
+hotfix/com.freescale.vspa3.cdt.toolchain.FixCommandLinePatternHotFix=true

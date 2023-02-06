@@ -1,0 +1,69 @@
+// =============================================================================
+//! @file           compensate_cfo.sx
+//! @brief          Assembly functions to compensate CFO using NCO.
+//! @copyright      Copyright 2021-2022 NXP
+// =============================================================================
+/*  NXP Confidential. This software is owned or controlled by NXP and may only be used strictly
+ *  in accordance with the applicable license terms. By expressly accepting
+ *  such terms or by downloading, installing, activating and/or otherwise using
+ *  the software, you are agreeing that you have read, and that you agree to
+ *  comply with and are bound by, such license terms. If you do not agree to
+ *  be bound by the applicable license terms, then you may not retain,
+ *  install, activate or otherwise use the software.
+ */
+#include "vspa2_fw.h"
+
+// _VR  = # of halfwords of one  VRA register
+// _VRH = # of halfwords of half VRA register
+#define _VR     (__AU_COUNT__*4)
+#define _VRH    (__AU_COUNT__*2)
+
+    .global  _compensate_cfo_cplx
+    .type    _compensate_cfo_cplx, @function
+    .size _compensate_cfo_cplx, _compensate_cfo_cplx_end - _compensate_cfo_cplx
+_compensate_cfo_cplx:
+    
+	set.nco normal, 0x1, 0; // "normal" = generates 16 samples of a complex tone each cycle; nco_k=1; nco_freq=0 (will be changed later). opD. 3 cycle delay.
+	nop;
+	nop;
+	mv nco_freq, g1;
+	mv nco_phase, g2;
+	set.loop g3,LS,LE // One lines equal to 128 elements 
+	clr.VRA;
+	set.prec  half_fixed, half_fixed, half_fixed, single, half_fixed;
+    set.VRAincr rS0, _VRH; //rS0 is pointing to R0
+    set.Smode S0hlinecplx, S1nco, S2zeros;
+    set.VRAptr rV, 4*_VR; // Pointing to 4th line
+	//set.Vrange1 4*_VR 5*_VR
+	set.range a1, a2, g0; // Set the pointer limit by the function call. CBUF_SZ * 2 * UPHW stores in g0
+	LS: clr.VRA; loop_begin;
+	set.VRAincr rS0, _VRH; 
+	set.VRAptr rV, 4*_VR;
+	set.VRAincr rV, _VRH; // Increment V pointer by half a line 
+    set.VRAptr rSt, 4;    // Pointing to 4th line
+    set.VRAincr rSt, 1; 
+    	ld.laddr [a1]+1;	      
+		ld.laddr [a1]+1;										     
+		ld.laddr [a1]+0;																		
+		ld.laddr [a1]+1;	ld.h2l R0;															
+		ld.laddr [a1]+1;  	ld.l2h_h2l R0;														
+		ld.laddr [a1]+0;	ld.l2h R1;				rd S0;rd S1;rd S2;							
+							ld.h2l R2;				rd S0;rd S1;								
+							ld.l2h_h2l R2;			rd S0;rd S1;		cmad;					
+							ld.l2h R3;				rd S0;rd S1;		cmad;					
+													rd S0;rd S1;		cmad;
+													rd S0;rd S1;		cmad;
+													rd S0;rd S1;		cmad;	wr.hlinecplx;
+													rd S0;rd S1;		cmad;	wr.hlinecplx;
+		st.laddr [a0]+1;												cmad;	wr.hlinecplx;
+																		cmad;	wr.hlinecplx;
+		st.laddr [a0]+1;														wr.hlinecplx;
+																				wr.hlinecplx;
+		st.laddr [a0]+1;														wr.hlinecplx;
+																				wr.hlinecplx;
+	LE:	st.laddr [a0]+1;	loop_end;                 
+	rts;
+	mv g4, nco_phase;
+	set.range a1, g2, 0;
+																			
+_compensate_cfo_cplx_end:

@@ -1,0 +1,339 @@
+
+
+
+#define _VR     (__AU_COUNT__*4)
+#define _VRH    (__AU_COUNT__*2)
+// vmult_correlation_vecalgn_asm(cfixed16_t* x1,cfixed16_t* x2,float *corr_re, float *corr_im, uint32_t L)
+// === pointwise complex conjugate multiplication of conj(x1)*x2two vectors === //
+    .section .text.cf
+    .global  _vmult_correlation_vecalgn_asm
+    .type    _vmult_correlation_vecalgn_asm, @function
+    .size _vmult_correlation_vecalgn_asm, _vmult_correlation_vecalgn_asm_end -_vmult_correlation_vecalgn_asm
+_vmult_correlation_vecalgn_asm:
+    // y = sum(conj(x1) .* x2)
+    // y = y/abs(y) 
+    //a0: x1 vector aligned 
+    //a1: x2 vector aligned
+    //g0: # of output DMEM lines in 128 elements size
+    //g1: real(y)
+    //g2: imag(y)
+    clr.VRA;
+    add g0, -1; 
+    set.loop g0, LS,LE; 
+    
+	set.VRArange1 rS1,1*_VR,3*_VRH;
+	set.VRArange1 rS0,0*_VR,1*_VRH;
+    set.prec half_fixed, half, half, single, single;   
+        ld.laddr [a0]+1;    										  	set.VRAptr rS1, 1*_VR;                                    
+        ld.laddr [a1]+1;    										  	set.VRAptr rS0, 0*_VR; 
+        				    fnop;                                                                                                              
+     						ld.normal R0;   						  	set.VRAptr rV, 0*_VR;
+        ld.laddr [a0]+1;    ld.normal R1;   						  	set.VRAincr rS1, _VRH;                           
+        ld.laddr [a1]+1;                    						  	set.VRAincr rS0, _VRH;
+                                            rd S0;  rd S1;  rd S2;      set.Smode S0conj, S0hlinecplx, S1hlinecplx, S2zeros;               
+       						ld.normal R0;	rd S0;  rd S1;
+        ld.laddr [a0]+1;    ld.normal R1;			        			cmad;                                             
+        ld.laddr [a1]+1;                                   				cmac;                 
+                                            rd S0;  rd S1;              
+                            ld.normal R0;   rd S0;  rd S1;                        
+        ld.laddr [a0]+1;    ld.normal R1;                               cmac;                        
+        ld.laddr [a1]+1;                                   				cmac;
+                                            rd S0;  rd S1;               
+                            ld.normal R0;   rd S0;  rd S1;                      
+        ld.laddr [a0]+1;    ld.normal R1;                               cmac;                        
+        ld.laddr [a1]+1;                                   				cmac;
+                                            rd S0;  rd S1;              
+                            ld.normal R0;   rd S0;  rd S1;                        
+        ld.laddr [a0]+1;    ld.normal R1;                               cmac;                        
+        ld.laddr [a1]+1;    			                                cmac;
+        																                      
+    LS:                                     rd S0;  rd S1;              loop_begin;
+    						ld.normal R0;   rd S0;  rd S1;                       
+        ld.laddr [a0]+1;    ld.normal R1;                               cmac;                         
+        ld.laddr [a1]+1;                                   				cmac;                
+                                            rd S0;  rd S1;              
+                            ld.normal R0;   rd S0;  rd S1;                                                                                
+        ld.laddr [a0]+1;    ld.normal R1;                               cmac;  
+        ld.laddr [a1]+1;    			                                cmac;  
+                                            rd S0;  rd S1;              
+                            ld.normal R0;   rd S0;  rd S1;                                          
+        ld.laddr [a0]+1;    ld.normal R1;                               cmac;                         
+        ld.laddr [a1]+1;    			                                cmac;                  
+                                            rd S0;  rd S1;              
+                            ld.normal R0;   rd S0;  rd S1;                                                                                
+        ld.laddr [a0]+1;    ld.normal R1;                               cmac;
+   LE:  ld.laddr [a1]+1;    			                                cmac;        loop_end;
+    																	   
+    																	clr.VRA;
+                                            set.VRAptr rS1, 1*_VR;      set.rot R0r4; 
+                                            							set.loop 12,1;                                                     
+                                           								set.prec single,single,single,single,single;
+                                            wr.hlinecplx;               set.Smode S0straight,S1real1,S2zeros;
+                                                        
+    rd S0;rd S1;rd S2;	ror;		         // This part will sum the elements of correlations																	
+    rd S0;              ror;         
+    rd S0;              ror;    rmad;										
+    rd S0;              ror;    rmac;	    loop_begin;loop_end;			
+    rd S0;						rmac;
+                                rmac; 
+                                rmac;   
+                                            set.VRAptr rS1,0*_VR;                                                                  
+                                            fnop;                       
+                                            fnop;    
+                                            wr.straight;   				set.Smode S0conj, S0hlinecplx, S1hlinecplx, S2zeros; 
+    rd S0;rd S1;rd S2;
+                                            set.VRAptr rV, 5*_VR;
+                                cmad;
+                                            set.VRAptr rS1,5*_VR;
+                                          						        set.Smode S0straight,S1straight,S2zeros;
+                                fnop;
+                                            wr.hlinecplx;
+    rd S0;  rd S1; rd S2;                     
+                                fnop;
+    rrt;               
+                                            set.VRAptr rV,6*_VR;
+                                rmad.sau;/*cmad;*/
+                                			set.VRAptr  rS0,6*_VR;
+                                fnop;
+                                fnop;
+                                            wr.straight;
+    rd S0;
+    set.VRAincr  rS0, 2;
+    mv.w g5, [rS0];
+    mv.w g6, [rS0]; 
+    st [a2], g5;
+    st [a3], g6;                       
+    rts;                                                                
+    fnop;
+    fnop;
+_vmult_correlation_vecalgn_asm_end:
+
+
+
+// vmult_conj_vecalgn_asm(cfloat16_t* x1,cfloat16_t* x2,cfloat16_t* y, size_t L)
+// === pointwise complex conjugate multiplication of conj(x1)*x2 vectors === //
+    .section  .text.cf
+    .global  _vmult_conj_vecalgn_hfl_hfl
+    .type    _vmult_conj_vecalgn_hfl_hfl, @function
+    .size _vmult_conj_vecalgn_hfl_hfl, _vmult_conj_vecalgn_hfl_hfl_end - _vmult_conj_vecalgn_hfl_hfl
+_vmult_conj_vecalgn_hfl_hfl:
+    // y = conl(x1) .* x2)
+    //a0: x1 vector aligned 
+    //a1: x2 vector aligned
+    //a2: y  vector aligned
+    //g0: #  no of lines in VRA (32 element) half fixed complex size
+    clr.VRA;
+    set.loop g0, LST,LET; 
+    set.VRAptr rS1, 1*_VR;
+    set.VRAptr rS0, 0*_VR;
+    set.VRAptr rV, 4*_VR;
+    set.VRAptr rSt, 4;
+    set.VRAincr rS1, _VRH;
+    set.VRAincr rS0, _VRH;
+    set.VRAincr rV,  _VRH;
+    set.VRArange1 rS1,1*_VR,3*_VRH;
+    set.VRArange1 rS0,0*_VR,1*_VRH;
+    set.VRArange1 rV,4*_VR,9*_VRH;
+    set.prec half, half, half, single, half;   
+LST:    ld.laddr [a0]+1;    /*clr.VRA;*/                                    loop_begin;                                   
+        ld.laddr [a1]+1;    
+        fnop;                                                                                                           
+                            ld.normal R0;                            
+                            ld.normal R1;                               
+                                            rd S0;  rd S1;  rd S2;      set.Smode S0conj, S0hlinecplx, S1hlinecplx, S2zeros; 
+                              /* fnop;  */  rd S0;  rd S1;  rd S2;                               
+                                                                        cmad;  
+                                                                        cmad;               
+                            fnop;
+                            fnop;
+                          /*  fnop;*/         wr.hlinecplx;                                              
+                                              wr.hlinecplx;
+LET:     st.laddr [a2]+1;    loop_end;                                                                                                                                                           
+    rts;                                                                 
+    fnop;
+    fnop;
+_vmult_conj_vecalgn_hfl_hfl_end:
+
+/*
+// vmult_conj_vecalgn_asm(cfixed16_t* x1,cfixed16_t* x2,cfixed16_t* y, size_t L)
+// === pointwise complex conjugate multiplication of conj(x1)*x2 vectors === //
+    .global  _vmult_conj_vecalgn_hfx_hfx
+    .type    _vmult_conj_vecalgn_hfx_hfx, @function
+    .size _vmult_conj_vecalgn_hfx_hfx, _vmult_conj_vecalgn_hfx_hfx_end - _vmult_conj_vecalgn_hfx_hfx
+_vmult_conj_vecalgn_hfx_hfx:
+    // y = conl(x1) .* x2)
+    //a0: x1 vector aligned 
+    //a1: x2 vector aligned
+    //a2: y  vector aligned
+    //a3: InitBuf circular base address
+    //g0: #  no of lines in VRA (32 element) half fixed complex size
+    clr.VRA;
+    set.loop g0, LSTP,LETP; 
+    set.VRAptr rS1, 1*_VR;
+    set.VRAptr rS0, 0*_VR;
+    set.VRAptr rV, 4*_VR;
+    set.VRAptr rSt, 4;
+    set.VRAincr rS1, _VRH;
+    set.VRAincr rS0, _VRH;
+    set.VRAincr rV,  _VRH;
+    set.VRArange1 rS1,1*_VR,3*_VRH;
+    set.VRArange1 rS0,0*_VR,1*_VRH;
+    set.VRArange1 rV,4*_VR,9*_VRH;
+    set.prec half_fixed, half_fixed, half_fixed, single, half_fixed;   
+LSTP:   ld.laddr [a0]+1;   			                                    loop_begin;                                   
+        ld.laddr [a1]+1;    
+        fnop;                                                                                                           
+                            ld.normal R0;                            
+                            ld.normal R1;                               
+                                            rd S0;  rd S1;  rd S2;      set.Smode S0conj, S0hlinecplx, S1hlinecplx, S2zeros; 
+                             			    rd S0;  rd S1;  rd S2;                               
+                                                                        cmad;  
+                                                                        cmad;               
+                            fnop;
+                            fnop;
+                                   			  wr.hlinecplx;                                              
+                                              wr.hlinecplx;
+LETP:     st.laddr [a2]+1;    loop_end;                                                                                                                                                           
+    rts;                                                            
+    fnop;
+    fnop;
+_vmult_conj_vecalgn_hfx_hfx_end:
+*/
+
+
+
+
+
+// ssb_idx_search(cfixed16_t* x1,cfixed16_t* x2,float* y);
+    .global  _ssb_idx_search
+    .type    _ssb_idx_search, @function
+    .section .text.cf
+    .size 	 _ssb_idx_search, _ssb_idx_search_end - _ssb_idx_search
+_ssb_idx_search:
+    // y[0] = abs(sum(conj(x1[1:144]).*x2))) , y[1] = abs(sum(conj(x1[145:288]).*x2))) ,.... y[8]=abs(sum(conj(x1[144*7+1:144*8]).*x2)))
+    //a0: x1 vector aligned , reference DMRS sequences 144x8
+    //a1: x2 vector aligned , extracted DNRS RE 144x1
+    //a2: y  vector aligned , miminised least square distances solution i.e min|V1-V2|^2 = min abs(sum(conj(V1).*V2)))
+
+		set.loop 8, SSBIDS,SSBIDE;
+		fnop;
+SSBIDS: clr.VRA;    																					loop_begin;
+		clr.au;
+	    set.loop 2, CORRS,CORRE; 
+		mvB a4, a1;
+		set.VRArange1 rS1,2*_VR,7*_VRH;
+	    set.VRArange1 rS0,0*_VR,3*_VRH; 
+		ld.laddr [a0]+1; 	 set.prec half_fixed, half_fixed, half_fixed, single, single;
+		ld.laddr [a4]+1;	 set.VRAptr rS1, 2*_VR;
+		ld.laddr [a0]+1; 	 set.VRAptr rS0, 0*_VR;
+		ld.laddr [a4]+1;     ld.h2l R0;             set.VRAptr rV, 0*_VR;
+		ld.laddr [a0]+0;     ld.h2l R2;				set.VRAincr rS1, _VRH;
+		ld.laddr [a4]+0;     ld.l2h_h2l R0;			set.VRAincr rS0, _VRH;		 	
+CORRS:   					 ld.l2h_h2l R2;																loop_begin;                                                                                                                                                                             
+        ld.laddr [a0]+1;     ld.l2h R1;				rd S0;  rd S1;  rd S2;      set.Smode S0conj, S0hlinecplx, S1hlinecplx, S2zeros; 
+        ld.laddr [a4]+1;     ld.l2h R3;			  	rd S0;  rd S1;  rd S2;		
+        ld.laddr [a0]+1;                    		rd S0;  rd S1;  rd S2;					cmac;
+        ld.laddr [a4]+1;     ld.h2l R0;             rd S0;  rd S1;  rd S2;					cmac;	
+        ld.laddr [a0]+0;     ld.h2l R2;   													cmac;
+CORRE:  ld.laddr [a4]+0;     ld.l2h_h2l R0;          										cmac;   	loop_end;
+							 ld.l2h_h2l R2;
+							 ld.l2h R1;				rd S0;  rd S1;  rd S2;
+							 ld.l2h R3;			  	rd S0;  rd S1;  rd S2;		
+													rd S0;  rd S1;  rd S2;					cmac;
+							 clr.VRA;
+                                            set.VRAptr rS0, 0*_VR;      set.rot R0r4; 
+																		set.loop 12,1;                                                     
+                                           								set.prec single,single,single,single,single;
+                                            wr.hlinecplx;               set.Smode S0straight,S1real1,S2zeros;
+                                                        
+    rd S0;rd S1;rd S2;	ror;		         // This part will sum the 16 elements of correlations																	
+    rd S0;              ror;         
+    rd S0;              ror;    rmad;										
+    rd S0;              ror;    rmac;	    loop_begin;loop_end;			
+    rd S0;						rmac;
+                                rmac; 
+                                rmac;   
+                                            set.VRAptr rS1,0*_VR;                                                                  
+                                            fnop;                       
+                                            fnop;    
+                                            wr.straight;   				set.Smode S0conj, S0hlinecplx, S1hlinecplx, S2zeros; 
+    rd S0;rd S1;rd S2;						 // This part will compute the abs of corr value obtained above
+                                            set.VRAptr rV, 0*_VR;
+                                cmad;
+                                            set.VRAptr rS1,0*_VR;
+                                          	set.VRAptr rSt,0*_VR;		set.Smode S0straight,S1straight,S2zeros;
+                                fnop;
+                                            wr.hlinecplx;
+    rd S0;rd S1;rd S2;                     
+                                fnop;
+    srt;               
+    fnop;
+    wr.fn;
+	stC.w [a2]+2;       /*incrementing a2 by 2 half words */
+SSBIDE 										add a0, -96; /*subrating 48 cfixed samples i.e 96 halfwords */    loop_end;     
+    rts;                                                                
+    fnop;
+    fnop;
+_ssb_idx_search_end:
+
+
+//mmse_equalizer_vecalgn(cfixed16_t* data_re_in,cfixed16_t* ch_est_in,cfixed16_t* equ_re_out, __fx16 N, size_t L);
+    .global  _mmse_equalizer_vecalgn
+    .type    _mmse_equalizer_vecalgn, @function
+    .section .text.cf
+    .size    _mmse_equalizer_vecalgn, _mmse_equalizer_vecalgn_end - _mmse_equalizer_vecalgn
+_mmse_equalizer_vecalgn:
+    /*		              conj(H) X 
+     y   =     		----------------------          
+                     (conj(H))*(H) + N  	 
+    */
+    //a0: x1 vector aligned ( Data RE X )
+    //a1: x2 vector aligned ( Channel Estimates H ) 
+    //a2: y  vector aligned ( Equalized Output )
+    //g0: 16 Bit Noise 
+    //g1: #  no of lines in VRA (32 element) half fixed complex size
+    clr.VRA;
+    set.loop g1, MMSES,MMSEE;
+	set.VRAptr rV, 4*_VR;
+    fill.w [rV],g0;
+    set.VRAincr rS0, _VRH;
+	set.VRAptr rS2, 4*_VR;  
+       
+MMSES:  ld.laddr [a0]+1;    set.prec half_fixed, half_fixed, half_fixed, single, half_fixed;		loop_begin;                                   
+		ld.laddr [a1]+1;	set.VRAptr rS0, 2*_VR;
+        ld.laddr [a0]+1;    set.VRAptr rS1, 2*_VR;                                                                                            
+		ld.laddr [a1]+1;	ld.normal R2;   set.VRAincr rS1, _VRH;                    
+                            ld.normal R0;   rd S0;  rd S1;  rd S2;      set.Smode S0conj, S0hlinecplx, S1hlinecplx, S2hlinecplx; 
+							ld.normal R3;	rd S0;  rd S1;  rd S2;      set.VRAptr rV, 5*_VR;                            
+							ld.normal R1;	rd S0;  rd S1;  rd S2;		cmad;		
+											rd S0;  rd S1;  rd S2;		cmad;  
+											set.VRAincr rS1,  0  ; 		cmad;
+											set.VRAptr rS1, 5*_VR;		cmad;	
+							wr.hlinecplx; 								set.prec half_fixed, half_fixed, half_fixed,single,single;     								            
+                            wr.hlinecplx;	        rd S1;  rd S2;    	set.Smode S0conj,S0hlinecplx,S1hlinecplx,S2zeros;					
+							wr.hlinecplx;	        rd S1;  rd S2;		set.VRAptr rS0, 2*_VR;		
+							wr.hlinecplx;	rd S0;  rd S1;  rd S2;		rcp; 
+											rd S0;  rd S1;  rd S2;		rcp;
+											rd S0;					    rcp; rmad.sau;
+											rd S0;						rcp; rmad.sau;    
+																			 rmad.sau;
+											set.VRAptr rS0,0*_VR;			 rmad.sau;
+							wr.hlinecplx;								set.prec half_fixed, single, single,single,half_fixed;
+							wr.hlinecplx;	rd S0;  rd S1;  rd S2;		set.Smode S0hlinecplx,S1hlinecplx,S2zeros;
+							wr.hlinecplx;	rd S0;  rd S1;  rd S2;		
+							wr.hlinecplx;	rd S0;  rd S1;  rd S2;				cmad;
+											rd S0;  rd S1;  rd S2;				cmad;
+											set.VRAptr rV, 6*_VR; 				cmad;
+											set.VRAincr rV, _VRH;				cmad;
+											
+							wr.hlinecplx;	set.VRAptr rSt, 6; 
+							wr.hlinecplx;	set.VRAincr rSt, 1;  
+							wr.hlinecplx;	st.laddr [a2]+1;
+							wr.hlinecplx;   set.VRAincr rV, 0;  
+MMSEE:										st.laddr [a2]+1;									loop_end;
+							                                                                                                                                                     
+    rts;                                                                 
+    fnop;
+    fnop;
+_mmse_equalizer_vecalgn_end:
+

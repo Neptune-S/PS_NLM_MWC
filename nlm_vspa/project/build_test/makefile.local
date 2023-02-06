@@ -1,0 +1,13 @@
+################################################################################
+# These macros are used by makefiles and argument files.
+# When a space is included in the path and quotes (") cannot be used,
+# a _ESCAPE version of the macro is added that escapes the space with backslash (\).
+################################################################################
+
+export GNU_Make_Install_DirEnv=$(CWInstallLocationEnv)/gnu/bin
+export VSPAiSCAPEToolsInstallDirEnv=$(CWInstallLocationEnv)/VSPA/VSPA_Tools/bin
+export ProjDirPath=D:/Varun/Sniff_rel_0.1/Sniffer_vspa_rel_alpha/project
+export CWInstallLocationEnv=C:/Freescale/CW_VSPA_v10.3.0
+export VSPAiSCAPEEnvironmentEnv=$(CWInstallLocationEnv)/VSPA/VSPA_Tools
+export SNIFFER_VSPA_REL_ALPHA=D:/Varun/Sniff_rel_0.1/Sniffer_vspa_rel_alpha
+export SRC=D:/Varun/Sniff_rel_0.1/Sniffer_vspa_rel_alpha/src

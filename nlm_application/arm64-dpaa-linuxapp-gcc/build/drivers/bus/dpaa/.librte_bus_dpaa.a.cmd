@@ -1,0 +1,1 @@
+cmd_librte_bus_dpaa.a = /opt/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-ar crDs librte_bus_dpaa.a dpaa_bus.o base/fman/fman.o base/fman/fman_hw.o base/fman/netcfg_layer.o base/qbman/process.o base/qbman/bman.o base/qbman/bman_driver.o base/qbman/qman.o base/qbman/qman_driver.o base/qbman/dpaa_alloc.o base/qbman/dpaa_sys.o 

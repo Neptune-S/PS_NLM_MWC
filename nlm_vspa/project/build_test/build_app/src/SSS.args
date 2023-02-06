@@ -1,0 +1,22 @@
+-arch vspa2
+-au_count 16
+-core_type sp
+-ansi off
+-g
+-cwd source
+-I"$(SNIFFER_VSPA_REL_ALPHA)/src"
+-I"$(ProjDirPath)/vspa-5g-lib/src"
+-I"$(SNIFFER_VSPA_REL_ALPHA)/src_cs"
+-I"$(SNIFFER_VSPA_REL_ALPHA)/src_cf"
+-I"$(SNIFFER_VSPA_REL_ALPHA)/include"
+-I"$(ProjDirPath)/devices"
+-I"$(ProjDirPath)/vector/ref"
+-DTCL_TEST=1
+-DMAILBOX_INTERFACE
+-O3
+-Os
+-opt=noalias_by_type
+-mvcpu
+-msgstyle gcc
+-env
+"$(VSPAiSCAPEEnvironmentEnv)"

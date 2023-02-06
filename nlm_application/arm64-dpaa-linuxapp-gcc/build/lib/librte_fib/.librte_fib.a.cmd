@@ -1,0 +1,1 @@
+cmd_librte_fib.a = /opt/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-ar crDs librte_fib.a rte_fib.o rte_fib6.o dir24_8.o trie.o 

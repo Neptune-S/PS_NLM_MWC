@@ -1,0 +1,21 @@
+-arch vspa2
+-au_count 16
+-core_type sp
+-ansi off
+-g
+-cwd source
+-I"$(NLM_VSPA)/src"
+-I"$(NLM_VSPA)/src_cs"
+-I"$(NLM_VSPA)/src_cf"
+-I"$(NLM_VSPA)/include"
+-I"$(ProjDirPath)/devices"
+-I"$(ProjDirPath)/vector/ref"
+-DTCL_TEST=1
+-DIS_SIMULATOR=1
+-O3
+-Os
+-opt=noalias_by_type
+-mvcpu
+-msgstyle gcc
+-env
+"$(VSPAiSCAPEEnvironmentEnv)"

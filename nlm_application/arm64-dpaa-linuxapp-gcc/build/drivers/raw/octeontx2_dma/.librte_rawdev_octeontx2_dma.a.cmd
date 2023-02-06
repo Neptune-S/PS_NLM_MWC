@@ -1,0 +1,1 @@
+cmd_librte_rawdev_octeontx2_dma.a = /opt/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-ar crDs librte_rawdev_octeontx2_dma.a otx2_dpi_rawdev.o otx2_dpi_msg.o otx2_dpi_test.o 

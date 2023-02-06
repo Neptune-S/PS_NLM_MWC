@@ -1,0 +1,135 @@
+//--------------------------------------------------------------------------
+// Copyright (c) 2019, NXP
+// NXP SEMICONDUCTOR CONFIDENTIAL PROPRIETARY
+//
+//--------------------------------------------------------------------------
+
+// =============================================================================
+//! @file           sss_gen_asm.sx
+//! @brief          Assembly functions for 5GNR SSS sequence generator.
+//! @author         NXP Semiconductors.
+//! @copyright      Copyright (C) 2018 NXP Semiconductors.
+// =============================================================================
+
+#include "vspa2_fw.h"
+
+#if UPHW==4
+    #define LOG2UPHW 2
+#elif UPHW==2
+    #define LOG2UPHW 1
+#elif UPHW==1
+    #define LOG2UPHW 0
+#else
+    #error unsupported UPHW
+#endif
+
+// _VR  = # of halfwords of one  VRA register
+// _VRH = # of halfwords of half VRA register
+#define _VR     (__AU_COUNT__*4)
+#define _VRH    (__AU_COUNT__*2)
+ 
+
+#define U2  ( 2 * UPHW)
+#define U4  ( 4 * UPHW)
+#define U6  ( 6 * UPHW)
+#define U8  ( 8 * UPHW)     
+#define U24 (24 * UPHW)
+
+// === === //
+    .global _sss_gen_hp_v1
+    .type _sss_gen_hp_v1, @function
+    .size _sss_gen_hp_v1,   _sss_gen_hp_v1_end -_sss_gen_hp_v1
+_sss_gen_hp_v1:
+    //a0: ptr to scratch buffer (256 HP)
+    //a1: store for sss sequence.
+    //a2: 
+    //a3: 
+    //a4: D0 ptr 		(_SSSDET_REF_D0)
+    //a5: D1 read ptr	(_SSSDET_REF_D1)
+    //a6: D1 reload ptr
+    //a7: 
+    //
+    //g0: id1
+    //g1: id2
+    //g2: id2 x (128x3bits) + (id1 mod 112)x128  = (id2 x 24)+((id1 mod 112)x8) halfwords
+    //
+    // example VRArange: 
+    //  R2[0]..R2[4]:   0x00840080  
+    //  R4..R7 wrap:    0x01C00100
+    //  R5..R7 wrap:    0x01C00140 
+    //
+    //VRA usage: see spreadsheet in "doc" folder
+    
+ 
+    // This function uses ld.qam to load D0 and D1 sequence of SSS (stored as bits in DMEM), into VRA (in half-fixed format) 
+    //  Use 4QAM mapping: bit0 <=> -0.125; bit1 <=> 0.125
+    //  Read Table 4-23 in ISM to understand how ld.qam works. Read "Section 14.5.1 VSPA Memory Map" in ISM to know how to set related IP registers.
+    //
+    // In IPreg 0x40 (word addr; ByteAddr=0x100, used in ISM "Load Register File Control register"): 
+    //      Mode = "2" for Mode=2 (4QAM). ByteAddr = 0x100.
+    //      BPSK,4QAM,16QAM only use Real0 (=IPreg 0x41) and Imag0(=IPreg0x41). 64qam and 256qam use Real0..7 and Imag0..7.
+    // In IPreg 0x41 (Real0)
+    //      8 of 4-bit are denoted by cp0..cp7. In each cp: "00"=1,"10"=-1 for 4QAM. ("01"=3 and "10"=-3, used for 16QAM) 
+    //      4QAM only uses CP3..CP0, each CP represented by 2-bit. "CP" means "coefficient pair".
+    //      [CP3 CP2 CP1 CP0] = 0x22 = 00_10_00_10b <=> {1,-1,  1,-1} as Four "modulation values" for real part    
+    // In IPreg 0x42 (Imag0) 
+    //      [CP3 CP2 CP1 CP0] = 0x0a = 00_00_10_10b <=> {1, 1, -1,-1} as Four "modulation values" for imag part
+    // Read from left to right, Real0,Imag0 form the complex symbol set (or "coefficient" set if using ISM terminology)
+    //                       {-1-1j     1-1j    -1+1j   1+1j}, corresponding to 
+    //            b1b0 pairs {00,       01,     10,     11}. This is WiFi's QPSK mapping: bit 0 mapped to -1; bit 1 to 1.
+    
+    //=== stage 1: compute D0 x D1 ===// 
+	mv g3, g0;
+	div g3, 112;    			// g3 = floor(id1/112). Range: {0,1,2}. 7-cycle delay.
+	mv g4, g0;	
+	mod g4, 112;    			// g4 = id1%112. Range: {0..111}. 
+    mpy g2, g1, (24 * UPHW);    // advance D0 ptr by ID2 x (128x3bits) = ID2 x 24halfwords.        	
+
+    // ld.qam (4QAM)    
+    mvip 0x40, 2;                 
+    mvip 0x41, 0xffffff22;        
+    mvip 0x42, 0xffffff0a;
+
+    mpy g5, g3, (8 * UPHW);     	// advance D0 ptr by ciel(ID1/112) x (128bits) = ciel(ID1/112) x 8 halfwords.     
+    mv a4, _SSSDET_REF_D0;    
+    mv a5, _SSSDET_REF_D1;
+	mv a3, 63;
+											//Address offset for D0
+	add g2, g2, g5;																			// Which is set of {b0a,b0b,b0c} to use depends on ID2 and select b0a or b0b or b0c based on ID1
+											//Load D1
+    ld [a5] + U4;                                                                           clr.VRA; //set.creg 255, 0; 
+    ld [a5] + U4;                                                                           set.prec half_fixed,half_fixed,half_fixed,single,half_fixed;                           
+	ld [a5] + U4;																			set.creg 19, 0;  
+	ld [a5] + 0;		ld.qam R0;															set.VRAincr rSt, 1;
+						ld.qam R1;															set.VRArange1 rSt, 0,3; 
+	ld [a4] + g2;		ld.qam R2;															set.VRAptr rSt, 0;				//Load D0
+	ld [a4] + U4;		ld.qam R3;															set.VRAptr  rS0, 0*_VR;																		 
+	ld [a4] + 0;																			set.VRAincr rS0, 1*_VR;		
+	st.laddr [a0]+1;   																		set.VRAptr rV, 2*_VR;			
+	st.laddr [a0]+1;	ld.qam R4;															set.VRAincr rV, 1*_VR; 
+	st.laddr [a0]+1;	ld.qam R5;															set.VRAptr  rS1, 4*_VR;
+	st.laddr [a0]-3;																		set.VRAincr rS1, 1*_VR;
+	//Dummy load 
+	ld [a0] + g4;																			set.Smode S0straight,S1straight,S2zeros;
+	ld.laddr [a0]+1;						//Load cyclic shifted D1 														
+	ld.laddr [a0]+1;																			
+	ld.laddr [a0]+0;  	
+						ld.h2l R0;
+						ld.l2h_h2l R0;
+						ld.l2h R1;			//D = D1 * D2. then set D[128]=0
+										rd S0;  rd S1;  rd S2;									
+										rd S0;  rd S1;  rd S2;									
+																rmad;						
+																rmad;  						
+	mv g5, 0;																						
+	fnop;																						
+																		wr.straight;		
+																		wr.straight;		set.VRAptr rV, 255;		
+	mv.h [rv], g5;												 							set.VRAptr rSt, 2;		// compute D * sEq.					 	
+	st.laddr [a1]+1;																		
+	st.laddr [a1]+1;																		
+
+    rts;               
+    set.creg 19, 0;
+    fnop;
+_sss_gen_hp_v1_end:																																		

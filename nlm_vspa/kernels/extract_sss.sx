@@ -1,0 +1,73 @@
+// =============================================================================
+//! @file           fftBR512HP.s
+//! @brief          IPPU procedure to undo bit reversal of half precision DIF FFT
+//! @copyright      &copy; 2014 Freescale Semiconductor, Inc.
+// =============================================================================
+
+// =============================================================================
+// fftBR512HP(
+//     unsigned int *pout,
+//     unsigned int *pbuf);
+//
+// arg0: pout = output buffer base address.
+// arg1: pbuf = input circular buffer base address.
+//
+// This procedure reorders the output of the DIF 512 function to get linearly ordered FFT output
+//
+// =============================================================================
+
+    .ippu
+
+    .section    .itext
+    .global     _extract_sss
+    .type       _extract_sss, %function
+
+_extract_sss:
+   // -------------------------------------------------------------------------
+    // Load input arguments:
+    // -------------------------------------------------------------------------
+ 	 mv as0, 1920;           //input buffer address at offset of 448 samples from start = 512 + 448
+	 mv as1, 2048;          // 512 samples in output , so total 512 * 2 memory increment for output result buffer address.
+	 mv as2, 1024;
+	   
+ 	mv mem_elem_rd_ptr, 0;
+	mv mem_elem_wr_ptr, 0;
+	mv r_rd_ptr, 0;
+ 	mv r_wr_ptr, 0;
+ 
+ 	mv m0, 64;
+ 	mv a0, as0;
+ 	mv a1, as1;
+
+ 	ld.vcpu [a0]+ m0, 0, normal, -1, normal; 
+ 	ld.vcpu [a0]-m0, 0, normal, +1, normal;
+ 	nop;
+	nop;
+ 	st.vcpu [a1]+m0, 0,normal, -1, normal;	//st.vcpu [a1]+m0, 0, normal, 0, normal;  loop_end 0;
+ 	nop;
+ 	st.vcpu [a1]+m0, 0, normal, +1, normal; 
+ 
+  	mv mem_elem_rd_ptr, 0;
+	mv mem_elem_wr_ptr, 0;
+	mv r_rd_ptr, 0;
+ 	mv r_wr_ptr, 0;
+ 	
+ 	mv a0, as2;
+	
+ 	ld.vcpu [a0]+ m0, 0, normal, -1, normal; 
+ 	ld.vcpu [a0]-m0, 0, normal, +1, normal;
+ 	nop;
+	nop;
+ 	st.vcpu [a1]+m0, 0,normal, -1, normal;	//st.vcpu [a1]+m0, 0, normal, 0, normal;  loop_end 0;
+ 	nop;
+ 	st.vcpu [a1]+m0, 0, normal, +1, normal; 
+ 
+	nop;   
+ 	nop;
+
+ 	done;
+ 	nop;
+ 	nop;
+ 	
+   .size   _extract_sss, .-_extract_sss
+ 

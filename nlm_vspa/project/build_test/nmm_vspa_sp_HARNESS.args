@@ -1,0 +1,91 @@
+-arch vspa2
+-au_count 16
+-core_type sp
+-Xlnk
+"-Map nmm_vspa_sp_HARNESS.map"
+-mem
+"$(ProjDirPath)/LCF/la9310_nmm_test.lcf"
+-no-startup-files
+-env
+"$(VSPAiSCAPEEnvironmentEnv)"
+-au_count 16
+-core_type sp
+-ansi off
+-g
+-cwd source
+-I"$(SNIFFER_VSPA_REL_ALPHA)/src"
+-I"$(ProjDirPath)/vspa-5g-lib/src"
+-I"$(SNIFFER_VSPA_REL_ALPHA)/src_cs"
+-I"$(SNIFFER_VSPA_REL_ALPHA)/src_cf"
+-I"$(SNIFFER_VSPA_REL_ALPHA)/include"
+-I"$(ProjDirPath)/devices"
+-I"$(ProjDirPath)/vector/ref"
+-DTCL_TEST=1
+-DMAILBOX_INTERFACE
+-O3
+-Os
+-opt=noalias_by_type
+-mvcpu
+-msgstyle gcc 
+"./src/SSS.eln"
+"./src/_cell_search.eln"
+"./src/_harness.eln"
+"./src/atan_alloc.eln"
+"./src/atan_asm.eln"
+"./src/bitRev512.eln"
+"./src/bitRev512Invoke.eln"
+"./src/capture.eln"
+"./src/compensate_cfo.eln"
+"./src/copy_vec_asm.eln"
+"./src/crt0.eln"
+"./src/dfe_proc.eln"
+"./src/dfe_proc_nr.eln"
+"./src/ffo_hypo_corr_asm.eln"
+"./src/fftBR512HP.eln"
+"./src/fftDIF512_hfx_hfl.eln"
+"./src/fftDIF512_hfx_hfx.eln"
+"./src/fftDIF512_hfx_sfl.eln"
+"./src/fftDIT512_hfx_hfx.eln"
+"./src/fftDIT512_sflsfl.eln"
+"./src/nco_upd_asm.eln"
+"./src/nr_full_corr_asm_v2.eln"
+"./src/nr_pssdet_xcorr_fft.eln"
+"./src/pssdet_rssi_asm.eln"
+"./src/pssdet_xcorr_fft_asm.eln"
+"./src/ptrsDecimator.eln"
+"./src/sssdet_asm.eln"
+"./src/system_resources.eln"
+"./devices/bss.eln"
+"./devices/dma.eln"
+"./devices/mailbox.eln"
+"./devices/phy-timer.eln"
+"./build_app/src/SSS.eln"
+"./build_app/src/_cell_search.eln"
+"./build_app/src/_harness.eln"
+"./build_app/src/atan_alloc.eln"
+"./build_app/src/atan_asm.eln"
+"./build_app/src/bitRev512.eln"
+"./build_app/src/bitRev512Invoke.eln"
+"./build_app/src/capture.eln"
+"./build_app/src/compensate_cfo.eln"
+"./build_app/src/copy_vec_asm.eln"
+"./build_app/src/dfe_proc.eln"
+"./build_app/src/dfe_proc_nr.eln"
+"./build_app/src/ffo_hypo_corr_asm.eln"
+"./build_app/src/fftBR512HP.eln"
+"./build_app/src/fftDIF512_hfx_hfl.eln"
+"./build_app/src/fftDIF512_hfx_hfx.eln"
+"./build_app/src/fftDIF512_hfx_sfl.eln"
+"./build_app/src/fftDIT512_hfx_hfx.eln"
+"./build_app/src/fftDIT512_sflsfl.eln"
+"./build_app/src/nco_upd_asm.eln"
+"./build_app/src/nr_full_corr_asm_v2.eln"
+"./build_app/src/nr_pssdet_xcorr_fft.eln"
+"./build_app/src/pssdet_rssi_asm.eln"
+"./build_app/src/pssdet_xcorr_fft_asm.eln"
+"./build_app/src/ptrsDecimator.eln"
+"./build_app/src/sssdet_asm.eln"
+"./build_app/src/system_resources.eln"
+"./build_app/devices/dma.eln"
+"./build_app/devices/mailbox.eln"
+"./build_app/devices/phy-timer.eln"
