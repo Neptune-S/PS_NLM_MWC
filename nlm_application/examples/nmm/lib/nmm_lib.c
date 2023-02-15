@@ -22,7 +22,7 @@
 #include <rte_bbdev.h>
 #include <rte_malloc.h>
 #include <rte_string_fns.h>
-
+#include <unistd.h>
 #include <rte_pmd_bbdev_la93xx.h>
 
 #include "nmm_lib.h"
@@ -54,6 +54,8 @@
 #define NMM_CF_NO_OF_RETRIES (10 * NMM_NO_OF_RETRIES)
 
 #define NMM_CB_RING_MAX_SIZE 16
+
+
 
 struct nmm_band_info
 {
@@ -2691,8 +2693,44 @@ static void process_mib_reply(struct rte_bbdev_op_data *in_buf)
 	else
 		printf("[MIB_INFO:]cellBarred: Barred\n\r");
 	printf("[MIB_INFO:]pdcch_configSIB1: %d\n\r", nmm_info->mib_info.pdcch_configSIB1);
+	//memcpy(&stats,&nmm_info->mib_info,sizeof(stats));
+	stats.systemFrameNumber= nmm_info->mib_info.systemFrameNumber;
+	stats.ssb_subcarrierOffset= nmm_info->mib_info.ssb_subcarrierOffset;
+	stats.dmrs_typeA_Position= nmm_info->mib_info.dmrs_typeA_Position;
+	stats.half_frame_bit= nmm_info->mib_info.half_frame_bit;
+	stats.k_ssb_msb= nmm_info->mib_info.k_ssb_msb;
+	stats.cellBarred= nmm_info->mib_info.cellBarred;
+	stats.subCarrierSpacingCommon= nmm_info->mib_info.subCarrierSpacingCommon;
+	stats.pdcch_configSIB1= nmm_info->mib_info.pdcch_configSIB1;
+	stats.intraFreqReselection= nmm_info->mib_info.intraFreqReselection;
 }
 
+static void process_get_cell_stats_reply(struct rte_bbdev_op_data *in_buf)
+{
+	struct nmm_msg *nmm_info;
+	nmm_info= (struct nmm_msg *)in_buf->mem;
+	
+		cell_follow_stats.cell_follow_cell_id=nmm_info->cell_acquistion_response.cell_follow_cell_id;
+		cell_follow_stats.cell_rssi_dBm=(int32_t)(10 * nmm_info->cell_acquistion_response.cell_rssi_dBm);
+		cell_follow_stats.cell_snr_dB=(int32_t)(10 * nmm_info->cell_acquistion_response.cell_snr_dB);
+		cell_follow_stats.n_rx_ssb=nmm_info->ssb_stats.n_rx_ssb;
+		cell_follow_stats.n_missed_detection=((nmm_info->ssb_stats.n_missed_detection + nmm_info->ssb_stats.n_false_alarm) * 100000) / nmm_info->ssb_stats.n_rx_ssb;
+		cell_follow_stats.n_false_alarm=(nmm_info->ssb_stats.n_false_alarm * 100000) / nmm_info->ssb_stats.n_rx_ssb;
+		cell_follow_stats.n_rx_mib=nmm_info->ssb_stats.n_rx_mib;
+		cell_follow_stats.n_mib_crc_fail=(nmm_info->ssb_stats.n_mib_crc_fail * 100000) / (nmm_info->ssb_stats.n_rx_mib + 1);
+		cell_follow_stats.cell_tracking=nmm_info->cell_acquistion_response.cell_tracking;
+		cell_follow_stats.cfo_ppb=nmm_info->iir_filter_cfo_param.cfo_est * 1000;
+}
+
+static void process_band_stats_reply(struct rte_bbdev_op_data *in_buf)
+{
+	struct nmm_msg *nmm_info;
+	nmm_info= (struct nmm_msg *)in_buf->mem;
+	cell_follow_stats.cell_search_cell_id=nmm_info->cell_acquistion_response.cell_search_cell_id;
+	cell_follow_stats.cell_rssi_dBm=(int32_t)(10 * nmm_info->cell_acquistion_response.cell_rssi_dBm);
+	cell_follow_stats.cell_snr_dB=(int32_t)(10 * nmm_info->cell_acquistion_response.cell_snr_dB);
+
+}
 static void process_stop_reply(struct rte_bbdev_op_data *in_buf)
 {
 	struct nmm_msg *reply;
@@ -2854,6 +2892,12 @@ static void process_rx(struct rte_bbdev_op_data *in_buf)
 		break;
 	case NMM_CELL_FOLLOW_MIB_INFO:
 		process_mib_reply(in_buf);
+		break;
+	case NMM_GET_CELL_STATS_INFO:
+		process_get_cell_stats_reply(in_buf);
+		break;
+	case NMM_GET_BAND_STATS:
+	    process_band_stats_reply(in_buf);
 		break;
 	case NMM_CELL_FOLLOW_STOP:
 		break;
@@ -7352,17 +7396,20 @@ static int server_init(__attribute__((unused)) void *dummy)
 {
 	int server_fd, new_socket,n;
 	struct sockaddr_in address;
+	int i=0;
+	//struct mib_info *mib_info;
+	//struct rte_bbdev_op_data *in_buf;
 	int opt = 1;
-	int ret;
+	int ret, val;
 	int addrlen = sizeof(address);
 	char buffer[1024] = { 0 };
-	char* hello = "Server is connected";
-	char* reply = "\n Okay";
+	//char* hello = "Server is connected";
+	char reply[1000];
 	char request[64] = {0};
 	fapi_request_nr_t *fapi_req;
 	nr_cell_follow_request_t *cfb_req;
 	nr_cell_follow_request_t *cf_req;
-	//struct nmm_msg *nmm_info;
+
 
 	// Creating socket file descriptor
 	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -7400,19 +7447,19 @@ static int server_init(__attribute__((unused)) void *dummy)
 		exit(EXIT_FAILURE);
 	}
 	
-    n= read(new_socket, buffer, 1024);
+    /*n= read(new_socket, buffer, 1024);
     printf("%s\n", buffer);
     send(new_socket, hello, strlen(hello), 0);
-    //printf("Server is connected\n");
+    printf("Server is connected\n");*/
 
-while(1)
+/*while(1)
 
 {
     bzero(buffer, 1024);
     n = read(new_socket, buffer, 1024);
     if(n<0)
         perror("Error on reading.");
-    printf("%s\n",buffer);
+    //printf("%s\n",buffer);
 		//Case to identify command type and send it to controller for processing
 
     parse_t *myobj = malloc(sizeof(parse_t));
@@ -7426,6 +7473,7 @@ while(1)
     }
     switch(myobj->msg_type){
 		case 0:
+		val=0;
 			fapi_req = (fapi_request_ssb_t *)request;
 			fapi_req->message_type = BAND_SCAN_N77_REQUEST;
 			ret = nmm_fapi_send_request((fapi_request_t*)fapi_req);
@@ -7435,6 +7483,7 @@ while(1)
 		break;
 
 		case 1:
+		val=1;
 			fapi_req = (fapi_request_nr_t *)request;
 			fapi_req->message_type = CELL_FOLLOW_REQUEST;
 			cf_req = (nr_cell_follow_request_t *)&fapi_req->message_body;
@@ -7446,22 +7495,21 @@ while(1)
 		break;
 
 		case 2:
+		val=2;
             fapi_req = (fapi_request_nr_t *)request;
 	        fapi_req->message_type = CELL_FOLLOW_MIB_REQUEST;
 	        cfb_req = (nr_cell_follow_request_t *)&fapi_req->message_body;
 	        cfb_req->gscn = myobj->gscn;
 	        ret = nmm_fapi_send_request((fapi_request_t*) fapi_req);
 	        if (ret < 0)
-		   printf("Error in cell follow request\n");
-		  /* sprintf(reply,"{\"SFN\":%d",nmm_info->mib_info.systemFrameNumber);
-		   send(new_socket, reply, strlen(reply),0);
-            if (n<0)
-              perror("Error on writing.");*/
+		    printf("Error in cell follow request\n");
 		break; 
+
 		case 3:
+		val=3;
 			fapi_req = (fapi_request_ssb_t *)request;
 			fapi_req->message_type = CELL_FOLLOW_STOP_REQUEST;
-	
+
 			ret = nmm_fapi_send_request((fapi_request_t*)fapi_req);
 			if (ret < 0)
 			printf("Error disabling test mode\n");
@@ -7473,20 +7521,191 @@ while(1)
 
 	}
 
-	    
-		/*int i = strncmp("Disconnect", buffer,3);
-        if(i==0)
-        break;*/
-        bzero(buffer, 1024);
-		/*if(myobj->msg_type==0)
-		char reply[400];
-		sprintf(reply,"structures",structures);*/
+	    usleep(5000000);
+		//1.Send Cell Acquisition information, Request cell acquisition
+		//2.Send SSB stats
+		//3.Send MIB info send SSB stats also
+		if (val==0){
+		usleep(60000000);
+		sprintf(reply,"\n{\"msg_type\":0,\n\"cell_follow_cell_id\":%d,\n\"cell_rssi_dBm\":%d,\n\"cell_snr_dB\":%d}\n\r",
+		cell_follow_stats.cell_search_cell_id, 
+		cell_follow_stats.cell_rssi_dBm,
+		cell_follow_stats.cell_snr_dB);
+		send(new_socket, reply, strlen(reply),0);
+		}
 
-        //fgets(buffer, 1024, stdin);
-       send(new_socket, reply, strlen(reply),0);
+		else if (val==1)
+		{ 
+			usleep(5000000);
+		sprintf(reply,"\n{\"msg_type\":1,\n\"cell_follow_cell_id\":%d,\n\"cell_rssi_dBm\":%d,\n\"cell_snr_dB\":%d,\n\"cell_tracking\":%d}\n\n{\"msg_type\":2,\n\"n_missed_detection\":%d,\n\"n_false_alarm\": %d,\n\"n_rx_ssb\":%d,\n\"n_rx_mib\":%d,\n\"n_rx_mib\":%d,\n\"n_mib_crc_fail\":%d}\n\r", 
+		cell_follow_stats.cell_follow_cell_id, 
+		cell_follow_stats.cell_rssi_dBm,
+		cell_follow_stats.cell_snr_dB,
+		cell_follow_stats.cell_tracking,
+		cell_follow_stats.n_missed_detection,
+		cell_follow_stats.n_false_alarm,
+		cell_follow_stats.n_rx_ssb,
+		cell_follow_stats.n_rx_mib,
+		cell_follow_stats.n_mib_crc_fail);
+		//cell_follow_stats.cfo_ppb);
+		send(new_socket, reply, strlen(reply),0);
+			}
+	
+
+		else if (val==2){
+		sprintf(reply, "\n{\"msg_type\":3,\n\"ssb_subcarrierOffset\":%d,\n\"pdcch_configSIB1\":%d,\n\"dmrs_typeA_Position\":%d,\n\"cellBarred\":%d,\n\"intraFreqReselection\":%d,\n\"subCarrierSpacingCommon\":%d}\n\r",
+		stats.ssb_subcarrierOffset,
+		stats.pdcch_configSIB1,
+		stats.dmrs_typeA_Position,
+		stats.cellBarred,
+		stats.intraFreqReselection,
+		stats.subCarrierSpacingCommon);
+		send(new_socket, reply, strlen(reply),0);
+		//usleep(2000000);
+		/*sprintf(reply,"\n{\"msg_type\":1,\n\"cell_follow_cell_id\":%d,\n\"cell_rssi_dBm\":%d,\n\"cell_snr_dB\":%d,\n\"cell_tracking\":%d}\n\n{\"msg_type\":2,\n\"n_missed_detection\":%d,\n\"n_false_alarm\": %d,\n\"n_rx_ssb\":%d,\n\"n_rx_mib\":%d,\n\"n_rx_mib\":%d,\n\"n_mib_crc_fail\":%d}\n\r", 
+		cell_follow_stats.cell_follow_cell_id, 
+		cell_follow_stats.cell_rssi_dBm,
+		cell_follow_stats.cell_snr_dB,
+		//stats.cfo_ppb,
+		cell_follow_stats.cell_tracking,
+		cell_follow_stats.n_missed_detection,
+		cell_follow_stats.n_false_alarm,
+		cell_follow_stats.n_rx_ssb,
+		cell_follow_stats.n_rx_mib,
+		cell_follow_stats.n_mib_crc_fail);
+		send(new_socket, reply, strlen(reply),0);*/
+		//usleep(5000000);
+		//i++;
+	/*	}
+		
+		
+		else if (val==3){
+		sprintf(reply,"\n{\"msg_type\":3,\n\"Cell Follow Stopped\"}\n");
+		send(new_socket, reply, strlen(reply),0);
+		}
+		
+
         if (n<0)
             perror("Error on writing.");
 
+}
+close(new_socket);
+close(server_fd);
+printf("Socket is closed.");
+return 0;*/
+while(1){bzero(buffer, 1024);
+n = read(new_socket, buffer, 1024);
+if(n<0)perror("Error on reading.");
+//printf("%s\n",buffer);
+//Case to identify command type and send it to controller for processing
+parse_t *myobj = malloc(sizeof(parse_t));
+int status = json_myobj_read(buffer, myobj); 
+   if (status == 0) {nmm_print_dbg("msg_type: %d\n", myobj->msg_type);
+nmm_print_dbg("gscn: %d\n", myobj->gscn);
+} 
+else 
+{
+puts(json_error_string(status));}
+switch(myobj->msg_type)
+{
+case 0:
+val=0;
+fapi_req = (fapi_request_ssb_t *)request;
+fapi_req->message_type = BAND_SCAN_N77_REQUEST;
+ret = nmm_fapi_send_request((fapi_request_t*)fapi_req);
+if (ret)
+printf("Error in band scan n77 request\n");  
+break;
+case 1:
+val=1;
+fapi_req = (fapi_request_nr_t *)request;
+fapi_req->message_type = CELL_FOLLOW_REQUEST;
+cf_req = (nr_cell_follow_request_t *)&fapi_req->message_body;
+cf_req->gscn = myobj->gscn;
+ret = nmm_fapi_send_request((fapi_request_t*)fapi_req);
+if (ret < 0)
+printf("Error in cell follow request\n");
+break;
+case 2:
+val=2;
+fapi_req = (fapi_request_nr_t *)request;
+fapi_req->message_type = CELL_FOLLOW_MIB_REQUEST;
+cfb_req = (nr_cell_follow_request_t *)&fapi_req->message_body;
+cfb_req->gscn = myobj->gscn;
+ret = nmm_fapi_send_request((fapi_request_t*) fapi_req);
+if (ret < 0)
+printf("Error in cell follow request\n");
+break;
+case 3:
+val=3;
+fapi_req = (fapi_request_ssb_t *)request;
+fapi_req->message_type = CELL_FOLLOW_STOP_REQUEST;
+ret = nmm_fapi_send_request((fapi_request_t*)fapi_req);
+if (ret < 0)
+printf("Error disabling test mode\n");
+break;
+default:
+printf("Message type not supported");
+break;
+}
+usleep(5000000);
+//1.Send Cell Acquisition information, Request cell acquisition
+//2.Send SSB stats
+//3.Send MIB info send SSB stats also
+if (val==0){
+usleep(60000000);
+sprintf(reply,"\n{\"msg_type\":0,\n\"cell_follow_cell_id\":%d,\n\"cell_rssi_dBm\":%d,\n\"cell_snr_dB\":%d}\n\r",
+cell_follow_stats.cell_search_cell_id,
+cell_follow_stats.cell_rssi_dBm,
+cell_follow_stats.cell_snr_dB);
+send(new_socket, reply, strlen(reply),0); 
+ }
+else if (val==1)
+{usleep(5000000);
+sprintf(reply,"\n{\"msg_type\":1,\n\"cell_follow_cell_id\":%d,\n\"cell_rssi_dBm\":%d,\n\"cell_snr_dB\":%d,\n\"cell_tracking\":%d}\n\n{\"msg_type\":2,\n\"n_missed_detection\":%d,\n\"n_false_alarm\": %d,\n\"n_rx_ssb\":%d,\n\"n_rx_mib\":%d,\n\"n_rx_mib\":%d,\n\"n_mib_crc_fail\":%d}\n\r",
+cell_follow_stats.cell_follow_cell_id,
+cell_follow_stats.cell_rssi_dBm,
+cell_follow_stats.cell_snr_dB,
+cell_follow_stats.cell_tracking,
+cell_follow_stats.n_missed_detection,
+cell_follow_stats.n_false_alarm,
+cell_follow_stats.n_rx_ssb,
+cell_follow_stats.n_rx_mib,
+cell_follow_stats.n_mib_crc_fail);
+send(new_socket, reply, strlen(reply),0); 
+}
+else if (val==2)
+{
+sprintf(reply, "\n{\"msg_type\":3,\n\"ssb_subcarrierOffset\":%d,\n\"pdcch_configSIB1\":%d,\n\"dmrs_typeA_Position\":%d,\n\"cellBarred\":%d,\n\"intraFreqReselection\":%d,\n\"subCarrierSpacingCommon\":%d}\n\r",
+stats.ssb_subcarrierOffset,
+stats.pdcch_configSIB1,
+stats.dmrs_typeA_Position,
+stats.cellBarred,
+stats.intraFreqReselection,
+stats.subCarrierSpacingCommon);
+send(new_socket, reply, strlen(reply),0);
+usleep(2000000);
+while(i<=5)
+{
+sprintf(reply,"\n{\"msg_type\":1,\n\"cell_follow_cell_id\":%d,\n\"cell_rssi_dBm\":%d,\n\"cell_snr_dB\":%d,\n\"cell_tracking\":%d}\n\n{\"msg_type\":2,\n\"n_missed_detection\":%d,\n\"n_false_alarm\": %d,\n\"n_rx_ssb\":%d,\n\"n_rx_mib\":%d,\n\"n_rx_mib\":%d,\n\"n_mib_crc_fail\":%d}\n\r",
+cell_follow_stats.cell_follow_cell_id,
+cell_follow_stats.cell_rssi_dBm,
+cell_follow_stats.cell_snr_dB,
+cell_follow_stats.cell_tracking,
+cell_follow_stats.n_missed_detection,
+cell_follow_stats.n_false_alarm,
+cell_follow_stats.n_rx_ssb,
+cell_follow_stats.n_rx_mib,
+cell_follow_stats.n_mib_crc_fail);
+send(new_socket, reply, strlen(reply),0);
+usleep(5000000);
+i++;}}  
+else if (val==3)
+{
+sprintf(reply,"\n{\"msg_type\":3,\n\"Cell Follow Stopped\"}\n");
+send(new_socket, reply, strlen(reply),0);} 
+if (n<0)
+perror("Error on writing.");
 }
 close(new_socket);
 close(server_fd);
