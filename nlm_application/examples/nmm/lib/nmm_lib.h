@@ -117,6 +117,44 @@ typedef struct fapi_indication {
 	uint32_t* message_body;
 } fapi_indication_t;
 
+
+typedef struct{
+	uint16_t systemFrameNumber;
+	uint16_t sfn;
+	uint8_t spare;
+	uint8_t half_frame_bit;
+	uint8_t k_ssb_msb;
+	uint8_t ssb_subcarrierOffset;
+	uint8_t pdcch_configSIB1;
+uint8_t dmrs_typeA_Position;
+uint8_t cellBarred;
+uint8_t intraFreqReselection;
+uint8_t subCarrierSpacingCommon;
+}stats_t;
+
+typedef struct{
+	int32_t cell_rssi_dBm;		
+	int32_t cell_snr_dB;
+	int32_t cfo_ppb;
+	uint16_t cell_follow_cell_id;
+	uint16_t cell_search_cell_id;
+	uint32_t n_missed_detection;
+ 	uint32_t n_false_alarm;
+ 	uint32_t n_rx_ssb;
+	uint32_t n_rx_mib;
+	uint16_t n_mib_crc_fail;
+	uint16_t gnb_sfn;
+	uint8_t  gnb_sf;
+    int32_t t_delta_minor;
+	uint16_t process_itr;
+	uint16_t cell_tracking;
+}cell_follow_stats_t;
+
+stats_t stats;
+cell_follow_stats_t cell_follow_stats;
+
+
+
 #define MAX_CARRIER_LIST		32
 #define MAX_PCI_LIST			32
 #define MAX_PSC_LIST			32
