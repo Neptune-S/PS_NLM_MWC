@@ -538,9 +538,23 @@ void prvDoRasterScan(struct nmm_mbox *v2h)
 		raster_scan_detected_ssb++;
 		raster_scan_rsp = 1;
 
+		struct nmm_msg *cpy_rsp;
+
+	    if(!ipc_up)
+		return;
+	    cpy_rsp = (struct nmm_msg *)prvGetTxBuf(BBDEV_IPC_DEV_ID_0,
+										BBDEV_IPC_M2H_QUEUE);
+	    if(!cpy_rsp){
+		return;}
+		memcpy(&cpy_rsp->cell_acquistion_response,cell_acquistion_response,sizeof(cell_acquistion_response_t));
+		cpy_rsp->type = NMM_GET_BAND_STATS;
+	    prvSendNMMReply(cpy_rsp);
+
 		log_info("CellId    : %d \n\r", cell_acquistion_response->cell_search_cell_id);
 		log_info("RSSI_x10  : %d dBm \n\r", (int32_t)(10*cell_acquistion_response->cell_rssi_dBm));
 		log_info("SNR_x10   : %d dB \n\r", (int32_t)(10*cell_acquistion_response->cell_snr_dB));
+		//memcpy structure 
+		
 	}
 	else
 		log_info("Status: SSB NOT FOUND \n\n\r");
@@ -1044,7 +1058,7 @@ void prvDoCellFollowCellSearch(struct nmm_mbox *v2h)
         
 		/* Calibrate RSSI */
 		cell_acquistion_response->cell_rssi_dBm -= gain_correction_gscn_db[cell_acquistion_response->gscn - N77_BAND_GSCN_START] - 30 + RSSI_OFFSET_DB;
-        
+        cell_acquistion_response->cell_tracking = 1; 
 		/* Clear Filters */
 		memset(&iir_cfo_filter_param,0,sizeof(iir_filter_cfo_param_t)); 
 		memset(&iir_noise_filter_param,0,sizeof(iir_filter_noise_param_t)); 
@@ -1154,9 +1168,9 @@ void prvDoTrackingUpdate(struct nmm_mbox *v2h, enum nmm_msg_type type)
 			if(one_sec_cnt == 250)
 			{
 				one_sec_cnt = 0;
-		
+
 				log_info("[SSB_TRACK_UPDATE]: SFN/SF: %d/%d, CellId: %d, RSSI_x10: %d dBm, SNR_x10: %d dB, cfo_x1000:%d Hz, ppb_x10: %d\n\r",
-					 schedular_params->gnb_sfn,
+					schedular_params->gnb_sfn,
 				 	schedular_params->gnb_sf,
 				 	cell_acquistion_response->cell_follow_cell_id,
 				 	(int32_t)(10 * cell_acquistion_response->cell_rssi_dBm),
@@ -1170,7 +1184,21 @@ void prvDoTrackingUpdate(struct nmm_mbox *v2h, enum nmm_msg_type type)
 				 	(ssb_stats->n_false_alarm * 100000) / ssb_stats->n_rx_ssb,
 				 	ssb_stats->n_rx_mib,
 				 	(ssb_stats->n_mib_crc_fail * 100000) / (ssb_stats->n_rx_mib + 1));
-			 
+				struct nmm_msg *cpy_rsp;
+
+	            if (!ipc_up)
+		        return;
+	            cpy_rsp = (struct nmm_msg *)prvGetTxBuf(BBDEV_IPC_DEV_ID_0,
+										BBDEV_IPC_M2H_QUEUE);
+	            if (!cpy_rsp)
+		        return;
+			    memcpy(&cpy_rsp->schedular_params,schedular_params,sizeof(schedular_params_t));
+			    memcpy(&cpy_rsp->cell_acquistion_response,cell_acquistion_response,sizeof(cell_acquistion_response_t));
+			    memcpy(&cpy_rsp->ssb_stats,ssb_stats,sizeof(ssb_stats_t));
+				memcpy(&cpy_rsp->iir_filter_cfo_param,cfo_filter,sizeof(iir_filter_cfo_param_t));
+	            cpy_rsp->type = NMM_GET_CELL_STATS_INFO;
+	            prvSendNMMReply(cpy_rsp);
+			
 			 
 			}else
 			one_sec_cnt++;
@@ -1631,7 +1659,7 @@ void vMibLoop(void *pvParameters)
 			taskEXIT_CRITICAL();
 			schedular_params->schedule_mib = MIB_NOT_SCHEDULE;
 
-			struct nmm_msg *nmm_msg;
+		    struct nmm_msg *nmm_msg;
 		
 	        if (!ipc_up)
 	        return;
