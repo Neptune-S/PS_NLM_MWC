@@ -1,0 +1,88 @@
+* {
+  box-sizing: border-box;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Float two columns side by side */
+.column1 {
+  float: left;
+  width: 30%;
+  padding: 0 10px;
+}
+
+.row1 {
+  display: flex;
+  justify-content: center;
+  flex-direction: row;
+  margin-top: 10px;
+}
+
+/* Clear floats after the columns */
+.row1:after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+/* Responsive columns */
+
+@media screen and (max-width: 600px) {
+  .column {
+    width: 100%;
+    display: block;
+    margin-bottom: 20px;
+  }
+}
+
+.card1 {
+  margin-top: 10px;
+  padding: auto;
+  background: #fff;
+  height: 350px;
+  cursor: pointer;
+  pointer-events: all;
+  box-shadow: 5px 5px 5px 5px #c6c2cc;
+  overflow: hidden;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.pumpa {
+  display: flex;
+  justify-content: center;
+  flex-direction: row;
+  margin: 15px;
+}
+
+/* button css */
+.btnfeature {
+  margin: auto;
+  width: 55%;
+  border: 1px solid #362e2e;
+  margin-top: 20px;
+  border-radius: 10px;
+}
+
+.btnheadf {
+  margin-top: 2px;
+  text-align: center;
+}
+.btnhead {
+  margin-left: 30px;
+  margin-bottom: 30px;
+  height: 35px;
+  width: 20%;
+  border-color: aliceblue;
+  box-shadow: 5px 5px 5px 5px #c6c2cc;
+  border-radius: 10px;
+}
+.btnhead:hover {
+  background-color: #4bb543;
+}
+
+.graphhead {
+  display: flex;
+  flex-direction: column;
+  font-size: 20px;
+  text-align: center;
+}
