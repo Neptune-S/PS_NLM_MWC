@@ -65,7 +65,8 @@ public class ServerSocketChannel implements Runnable, IWebsocketClient {
 	private HttpFrame httpFrameParser;
 
 	private IClientEventListener clientListener = null;
-	private final static String boardClientIP = "192.168.3.187";
+	//private final static String boardClientIP = "192.168.3.187";
+	private final static String boardClientIP = "192.168.2.203";
 	private final static int boardClientPort = 8080;
 	private volatile boolean running = true;
 	private static Socket boardClientSocket = null;
